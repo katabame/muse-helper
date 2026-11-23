@@ -43,17 +43,21 @@ globalThis.MuseHelper = (() => {
    *   avg / recent は project() の結果に情報を足したもの、または { insufficient: '理由' }
    */
   function forecast(state, history, now) {
-    if (!state || !state.reset || !Number.isFinite(state.used)) return null;
+    if (!state || !(state.resetAt || state.reset) || !Number.isFinite(state.used)) return null;
     now = now || Date.now();
     const at = state.at || now, used = state.used;
-    const resetAtDate = resetDate(state.reset, at);
-    if (!resetAtDate) return null;
-    const resetAt = resetAtDate.getTime();
+    // 正確なリセット日時(Muse の内部データの resetsAt)があればそれを、なければ日付の 0:00 を使う
+    let resetAt = state.resetAt;
+    if (!resetAt) {
+      const d = resetDate(state.reset, at);
+      if (!d) return null;
+      resetAt = d.getTime();
+    }
     const weekStart = resetAt - WEEK;
     if (now >= resetAt || at >= resetAt) return { resetPassed: true, resetAt, weekStart };
 
     const elapsed = Math.min(1, Math.max(0, (at - weekStart) / WEEK));
-    const r = { weekStart, resetAt, at, used, elapsed };
+    const r = { weekStart, resetAt, at, used, elapsed, exactReset: !!state.resetAt };
 
     // 1. 目安(週の経過割合ぶん使っている状態)との比較
     r.target = elapsed * 100;
@@ -78,7 +82,7 @@ globalThis.MuseHelper = (() => {
       r.recent.span = at - base.at;
       r.recent.delta = used - base.used;
     } else {
-      r.recent = { insufficient: '設定画面を2時間以上あけて再度開くと計算できます' };
+      r.recent = { insufficient: '2時間以上離れた記録がたまると計算できます' };
     }
     return r;
   }
@@ -90,10 +94,10 @@ globalThis.MuseHelper = (() => {
     return p.atReset > 90 ? 1 : 0;
   }
 
-  // 日時を「11/22 14:40」または「11/22 2:40 pm」に(予測なので分は10分単位に切り捨て)
-  function when(t, fmt12) {
+  // 日時を「11/22 14:40」または「11/22 2:40 pm」に(exact でなければ、予測なので分は10分単位に切り捨て)
+  function when(t, fmt12, exact) {
     const d = new Date(t);
-    const h = d.getHours(), m = pad(Math.floor(d.getMinutes() / 10) * 10);
+    const h = d.getHours(), m = pad(exact ? d.getMinutes() : Math.floor(d.getMinutes() / 10) * 10);
     const clock = fmt12 ? `${h % 12 || 12}:${m} ${h < 12 ? 'am' : 'pm'}` : `${pad(h)}:${m}`;
     return `${d.getMonth() + 1}/${d.getDate()} ${clock}`;
   }
@@ -147,6 +151,14 @@ globalThis.MuseHelper = (() => {
     DRAFTS_KEY: 'museDrafts', // { [チャットのパス]: { text, at } }
     DRAFTS_ENABLED_KEY: 'museDraftsEnabled', // false なら下書きを自動保存しない(既定は保存)
     DRAFT_KEEP: 30 * DAY,
+    SEND_KEY_KEY: 'museSendKey', // 'enter'(Enter で送信・既定)| 'mod-enter'(Ctrl/⌘+Enter で送信)
+    DATE_SEP_KEY: 'museDateSep', // false なら日付の区切り線を出さない(既定は表示)
+    RESP_TIME_KEY: 'museRespTime', // false なら応答時間を出さない(既定は表示)
+    BADGE_COMPACT_KEY: 'museBadgeCompact', // true ならバッジを縮小表示
+    NOTIFY_KEY: 'museNotify', // false なら使用率の通知を出さない(既定は通知)
+    NOTIFIED_KEY: 'museNotified', // 通知済みの ID(同じ週に同じ通知を繰り返さない)
+    NOTIFY_LOW: 20, // 残りがこの % 以下になったら通知
+    DEV_MODE_KEY: 'museDevMode', // true なら設定画面に開発者向けツールを出し、Console に museHelper を公開
     HISTORY_KEY: 'museUsageHistory', // [{ used, at }, ...] 使用率の記録(直近ペースの計算用)
     API_LATEST: `https://api.github.com/repos/${REPO}/releases/latest`,
     RELEASES_URL: `https://github.com/${REPO}/releases/latest`,
@@ -176,6 +188,23 @@ globalThis.MuseHelper = (() => {
     signed(n, digits = 0) {
       const v = Number(n.toFixed(digits));
       return (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(digits);
+    },
+
+    // リセットまでの残り時間: 「あと3日」「あと14時間」「あと25分」
+    until(ms) {
+      if (ms <= 0) return '済';
+      const m = Math.floor(ms / 60000);
+      if (m < 60) return `あと${m}分`;
+      const h = Math.floor(m / 60);
+      return h < 24 ? `あと${h}時間` : `あと${Math.floor(h / 24)}日`;
+    },
+
+    // 大きな数を「1.2億」「3,500万」のように
+    bigNum(n) {
+      if (!Number.isFinite(n)) return '';
+      if (n >= 1e8) return `${+(n / 1e8).toFixed(1)}億`;
+      if (n >= 1e4) return `${Math.round(n / 1e4).toLocaleString()}万`;
+      return n.toLocaleString();
     },
 
     ago(ms) {

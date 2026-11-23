@@ -9,7 +9,10 @@
   const TS_MODE_KEY = 'museTsMode'; // 'abs' | 'rel' | 'both'(settings.js で設定)
   const STALE_MS = 60 * 60 * 1000; // 1時間以上更新がなければ「古い」表示
 
-  let state = null; // { label, used, reset, extra, at }
+  // { label, used, reset, resetAt, extra, quotaStatus, source, at }
+  // reset は「11月24日」形式、resetAt は正確なリセット日時(ms、内部データから取れたときだけ)
+  let state = null;
+  let autoStatus = null; // usage-main.js からの自動更新の状態 { auto, lastFetchAt, lastError, intervalMs }
   let update = null; // GitHub Releases の確認結果(background.js が保存)
   let history = []; // [{ used, at }] 使用率の記録
   const PACE_BADGE_KEY = MuseHelper.PACE_BADGE_KEY;
@@ -37,8 +40,16 @@
       extra: extra || (state && state.extra) || '',
       at: Date.now(),
     };
+    // 内部データから取れた正確なリセット日時は、同じリセット日である限り引き継ぐ
+    if (state && state.resetAt && state.reset === next.reset) next.resetAt = state.resetAt;
+    if (state && state.quotaStatus) next.quotaStatus = state.quotaStatus;
     if (state && state.used === next.used && state.reset === next.reset && state.extra === next.extra) {
       state.at = next.at; // 値が同じでも「確認した時刻」は更新
+      // ただし保存は1分に1回まで(保存のたびに設定画面が描き直され、それがまた読み取りを呼ぶため)
+      if (next.at - lastSavedAt < 60000) {
+        render();
+        return true;
+      }
     } else {
       state = next;
     }
@@ -47,6 +58,40 @@
     render();
     return true;
   }
+
+  // usage-main.js(MAIN world)が Muse の内部データから読んだ使用率
+  function applyUsage(d) {
+    if (!d || !Number.isFinite(d.percentUsed)) return;
+    const r = d.resetsAt ? new Date(d.resetsAt) : null;
+    state = {
+      label: d.label || (state && state.label) || '',
+      used: d.percentUsed,
+      reset: r ? `${r.getMonth() + 1}月${r.getDate()}日` : (state && state.reset) || '',
+      resetAt: d.resetsAt || null,
+      extra: d.topupBalance > 0 ? MuseHelper.bigNum(d.topupBalance) : '',
+      quotaStatus: d.quotaStatus || '',
+      source: 'query',
+      at: Math.min(d.at || Date.now(), Date.now()),
+    };
+    save();
+    record(state.used, state.at);
+    render();
+  }
+
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || !e.data || e.data.source !== 'muse-helper') return;
+    if (!MuseHelper.alive()) return;
+    if (e.data.type === 'usage') {
+      // 調査用: ページ側の Console から受け取れているか確認できるよう、最後に受け取った値を属性に残す
+      document.documentElement.setAttribute('data-muse-helper-usage',
+        `${e.data.data && e.data.data.percentUsed}% reset=${e.data.data && e.data.data.resetsAt} @${new Date().toLocaleTimeString()}`);
+      applyUsage(e.data.data);
+    }
+    if (e.data.type === 'usage-status') {
+      autoStatus = e.data;
+      if (el) render();
+    }
+  });
 
   // 使用率の記録(直近ペースの計算用)。値が変わったときと、同じ値でも15分ごとに追加する。
   function record(used, at) {
@@ -57,12 +102,16 @@
   }
 
   // ---------- 保存 ----------
+  let lastSavedAt = 0;
   function save() {
+    lastSavedAt = Date.now();
     try { chrome.storage.local.set({ [STORE_KEY]: state }); } catch (e) {}
   }
 
   // ---------- 表示 ----------
   let el, big, small, pace, warn, upd, dragging = null;
+  let compact = false; // 縮小表示(クリックで切り替え)
+  const COMPACT_KEY = MuseHelper.BADGE_COMPACT_KEY;
 
   function build() {
     el = document.createElement('div');
@@ -95,20 +144,30 @@
     el.addEventListener('pointerdown', (e) => {
       if (e.target.closest('a')) return; // リンクはドラッグ対象にしない
       const r = el.getBoundingClientRect();
-      dragging = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+      dragging = { dx: e.clientX - r.left, dy: e.clientY - r.top, x: e.clientX, y: e.clientY, moved: false };
       el.setPointerCapture(e.pointerId);
       el.style.cursor = 'grabbing';
     });
     el.addEventListener('pointermove', (e) => {
       if (!dragging) return;
+      // 4px 未満の動きはクリックとみなす(縮小表示の切り替え)
+      if (!dragging.moved && Math.hypot(e.clientX - dragging.x, e.clientY - dragging.y) < 4) return;
+      dragging.moved = true;
       el.style.left = Math.max(0, e.clientX - dragging.dx) + 'px';
       el.style.top = Math.max(0, e.clientY - dragging.dy) + 'px';
       el.style.right = 'auto';
     });
     el.addEventListener('pointerup', () => {
       if (!dragging) return;
+      const moved = dragging.moved;
       dragging = null;
       el.style.cursor = 'grab';
+      if (!moved) {
+        compact = !compact;
+        try { chrome.storage.local.set({ [COMPACT_KEY]: compact }); } catch (e) {}
+        render();
+        return;
+      }
       try { chrome.storage.local.set({ [POS_KEY]: { left: el.style.left, top: el.style.top } }); } catch (e) {}
     });
   }
@@ -161,12 +220,46 @@
       '\n[使用ペース]\n' +
       `目安: ${Math.round(f.target)}%(週の経過割合)に対して ${f.used}%\n` +
       line('平均', f.avg) + '\n' + line('直近', f.recent) + '\n' +
-      '※ リセット時刻は 0:00 と仮定しています\n'
+      (f.exactReset ? '' : '※ リセット時刻は 0:00 と仮定しています\n')
     );
   }
 
   function render() {
+    renderFull();
+    applyCompact();
+  }
+
+  // 縮小表示: 「57%」だけ(古い値なら ⚠、更新があれば ⬆ を添える)。詳細はマウスを乗せると出る
+  function applyCompact() {
+    if (!el) return;
+    const rows = [small, pace, warn, upd];
+    if (!compact || !state || !MuseHelper.alive()) {
+      el.style.minWidth = '120px';
+      el.style.padding = '6px 10px';
+      el.dataset.compact = '';
+      return;
+    }
+    const warned = warn.style.display !== 'none';
+    const updated = upd.style.display !== 'none';
+    const remain = Math.max(0, 100 - state.used);
+    const color = big.firstChild && big.firstChild.style ? big.firstChild.style.color : '';
+    big.textContent = '';
+    const a = document.createElement('span');
+    a.textContent = `${remain}%`;
+    a.style.color = color;
+    big.appendChild(a);
+    if (warned) big.append(Object.assign(document.createElement('span'), { textContent: ' ⚠', style: 'color:#fbbf24;font-size:12px' }));
+    if (updated) big.append(Object.assign(document.createElement('span'), { textContent: ' ⬆', style: 'color:#93c5fd;font-size:12px' }));
+    rows.forEach((r) => { r.style.display = 'none'; });
+    el.style.minWidth = '0';
+    el.style.padding = '4px 9px';
+    el.dataset.compact = '1';
+    el.title = el.title.replace(/クリックで縮小表示.*$/m, 'クリックで元の表示に戻します。');
+  }
+
+  function renderFull() {
     if (!el) build();
+    small.style.display = ''; // 縮小表示で隠した行を戻す(他の行は下で表示/非表示を決め直す)
     if (!MuseHelper.alive()) {
       // 拡張機能が再読み込み・更新された後の古いスクリプト。表示はそのまま残し、再読み込みを促す。
       upd.style.display = 'none';
@@ -178,7 +271,7 @@
     renderUpdate();
     if (!state) {
       big.textContent = 'Muse: 未取得';
-      small.textContent = '設定画面を開くと取得します';
+      small.textContent = '設定画面を一度開くと自動で取得します';
       warn.style.display = 'none';
       pace.style.display = 'none';
       el.style.borderColor = 'rgba(255,255,255,.18)';
@@ -196,35 +289,78 @@
     b.style.cssText = 'font-weight:400;font-size:11px;opacity:.8';
     big.append(a, b);
 
-    const days = state.reset ? daysUntil(state.reset) : null;
-    const resetPassed = days != null && days < 0;
+    const now = Date.now();
+    const days = state.reset && !state.resetAt ? daysUntil(state.reset) : null;
+    const resetPassed = state.resetAt ? now >= state.resetAt : days != null && days < 0;
     const stale = age > STALE_MS;
+    const auto = !!(autoStatus && autoStatus.auto);
+    const autoFailing = auto && !!autoStatus.lastError;
 
     const parts = [];
-    if (state.reset) {
+    if (state.resetAt) {
+      // 正確な日時: 「11/24 9:11リセット(あと14時間)」
+      const r = new Date(state.resetAt);
+      const clock = MuseHelper.when(state.resetAt, MuseHelper.fmt12(), true).split(' ').slice(1).join(' ');
+      parts.push(`${r.getMonth() + 1}/${r.getDate()} ${clock}リセット(${MuseHelper.until(state.resetAt - now)})`);
+    } else if (state.reset) {
       const rest = days == null ? '' : days > 0 ? `(あと${days}日)` : days === 0 ? '(今日)' : '(済)';
       parts.push(`${state.reset}リセット${rest}`);
     }
     if (!stale) parts.push(ago(age) + '更新');
     small.textContent = parts.join(' ・ ');
 
-    // 古い値は別の行で目立たせる
-    if (resetPassed || stale) {
-      warn.textContent = resetPassed
-        ? '⚠ リセット後の値は未取得 — 設定画面で更新'
-        : `⚠ ${ago(age)}の値 — 設定画面で更新`;
-      warn.style.display = 'block';
-    } else {
-      warn.style.display = 'none';
+    // 古い値・自動更新の失敗は別の行で目立たせる
+    const howToUpdate = auto ? '自動更新を待つか設定画面で更新' : '設定画面を一度開くと自動更新';
+    if (autoFailing && (stale || resetPassed)) {
+      warn.textContent = '⚠ 自動更新に失敗 — 設定画面を開き直してください';
+    } else if (resetPassed) {
+      warn.textContent = `⚠ リセット後の値は未取得 — ${howToUpdate}`;
+    } else if (stale) {
+      warn.textContent = `⚠ ${ago(age)}の値 — ${howToUpdate}`;
     }
+    warn.style.display = resetPassed || stale ? 'block' : 'none';
     el.style.borderColor = stale || resetPassed ? '#fbbf24' : color;
     el.style.opacity = stale || resetPassed ? '.85' : '1';
     const paceDetail = renderPace();
+    const autoLine = auto
+      ? `自動更新: 有効(${Math.round(autoStatus.intervalMs / 60000)}分ごと)` +
+        (autoStatus.lastError ? `\n  前回の取得に失敗: ${autoStatus.lastError}` : '')
+      : '自動更新: 停止中(設定画面を一度開くと、このタブで自動更新が始まります)';
     el.title =
       `${state.label || '週間使用量'}\n` +
       (state.extra ? `追加トークン: 残り${state.extra}\n` : '') +
-      paceDetail +
-      '値は設定画面(利用状況)を開いたときに更新されます。\nドラッグで移動できます。';
+      paceDetail + '\n' + autoLine + '\nドラッグで移動できます。\nクリックで縮小表示にします。';
+    checkNotify();
+  }
+
+  // ---------- 使用率の通知 ----------
+  // 残りが NOTIFY_LOW% 以下になったとき、リセットまでに上限に届く見込みになったときに、
+  // background.js に通知を頼む(同じ週に同じ通知は1回だけ。重複の判定と設定の確認は background 側)
+  const notifyAsked = new Set(); // このタブで background に頼んだ通知(30秒ごとの再描画で何度も頼まないため)
+  function checkNotify() {
+    if (!state || !MuseHelper.alive()) return;
+    const now = Date.now();
+    if (now - state.at > STALE_MS) return; // 古い値では通知しない
+    const f = MuseHelper.forecast(state, history);
+    if (!f || f.resetPassed) return;
+    const week = String(f.resetAt);
+    const remain = Math.max(0, 100 - state.used);
+    const fmt12 = MuseHelper.fmt12();
+    const resetText = MuseHelper.when(f.resetAt, fmt12, f.exactReset);
+    const send = (id, title, message) => {
+      if (notifyAsked.has(`${id}:${week}`)) return;
+      notifyAsked.add(`${id}:${week}`);
+      try { chrome.runtime.sendMessage({ type: 'museNotify', id: `${id}:${week}`, title, message }, () => void chrome.runtime.lastError); } catch (e) {}
+    };
+    if (remain <= MuseHelper.NOTIFY_LOW) {
+      send('low', `Muse の残りが ${remain}% になりました`, `${state.used}% 使用済み。リセットは ${resetText} です。`);
+    }
+    const hit = [f.avg, f.recent].filter((p) => p && !p.insufficient && p.hitAt != null && p.hitAt > now).sort((a, b) => a.hitAt - b.hitAt)[0];
+    if (hit) {
+      const which = hit === f.recent ? '直近のペース' : '今週の平均ペース';
+      send('hit', 'このペースだとリセット前に上限に達します',
+        `${which}が続くと ${MuseHelper.when(hit.hitAt, fmt12)} ごろに上限に達する見込みです(リセットは ${resetText})。`);
+    }
   }
 
   // ---------- タイムスタンプ表示形式(MAIN world の timestamps.js へ属性で伝える) ----------
@@ -234,20 +370,34 @@
   function applyTsMode(v) {
     document.documentElement.setAttribute('data-muse-ts-mode', v === 'rel' || v === 'both' ? v : 'abs');
   }
+  // 日付の区切り線・応答時間(オフのときだけ "0")
+  const onOff = (attr, v) => document.documentElement.setAttribute(attr, v === false ? '0' : '1');
+  const SEP_KEY = MuseHelper.DATE_SEP_KEY, RESP_KEY = MuseHelper.RESP_TIME_KEY;
   try {
-    chrome.storage.local.get([TS_FMT_KEY, TS_MODE_KEY], (v) => {
+    chrome.storage.local.get([TS_FMT_KEY, TS_MODE_KEY, SEP_KEY, RESP_KEY], (v) => {
       applyTsFormat(v && v[TS_FMT_KEY]);
       applyTsMode(v && v[TS_MODE_KEY]);
+      onOff('data-muse-date-sep', v && v[SEP_KEY]);
+      onOff('data-muse-resp-time', v && v[RESP_KEY]);
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes[TS_FMT_KEY]) applyTsFormat(changes[TS_FMT_KEY].newValue);
       if (area === 'local' && changes[TS_MODE_KEY]) applyTsMode(changes[TS_MODE_KEY].newValue);
+      if (area === 'local' && changes[SEP_KEY]) onOff('data-muse-date-sep', changes[SEP_KEY].newValue);
+      if (area === 'local' && changes[RESP_KEY]) onOff('data-muse-resp-time', changes[RESP_KEY].newValue);
     });
   } catch (e) {}
 
   // ---------- 起動 ----------
   let timer;
-  const obs = new MutationObserver(() => {
+  // Muse Helper が自分で足した部品の中の変化には反応しない
+  const OWN = '#muse-usage-badge, .muse-helper-pane, .muse-helper-nav, .muse-ts-label, .muse-date-sep, #muse-helper-counter, #muse-helper-draft-chip';
+  const isOwn = (n) => {
+    const e = n && (n.nodeType === 1 ? n : n.parentElement);
+    return !!(e && e.closest(OWN));
+  };
+  const obs = new MutationObserver((list) => {
+    if (list.every((m) => isOwn(m.target))) return;
     clearTimeout(timer);
     timer = setTimeout(scan, 300);
   });
@@ -260,8 +410,9 @@
   }
 
   try {
-    chrome.storage.local.get([STORE_KEY, POS_KEY, HISTORY_KEY, PACE_BADGE_KEY, MuseHelper.UPDATE_KEY], (v) => {
+    chrome.storage.local.get([STORE_KEY, POS_KEY, HISTORY_KEY, PACE_BADGE_KEY, COMPACT_KEY, MuseHelper.UPDATE_KEY], (v) => {
       showPace = !(v && v[PACE_BADGE_KEY] === false);
+      compact = !!(v && v[COMPACT_KEY]);
       if (v && v[STORE_KEY]) state = v[STORE_KEY];
       if (v && Array.isArray(v[HISTORY_KEY])) history = v[HISTORY_KEY];
       update = (v && v[MuseHelper.UPDATE_KEY]) || null;
@@ -280,7 +431,8 @@
       if (changes[STORE_KEY] && changes[STORE_KEY].newValue) state = changes[STORE_KEY].newValue;
       if (changes[HISTORY_KEY] && Array.isArray(changes[HISTORY_KEY].newValue)) history = changes[HISTORY_KEY].newValue;
       if (changes[PACE_BADGE_KEY]) showPace = changes[PACE_BADGE_KEY].newValue !== false;
-      if (el && (changes[MuseHelper.UPDATE_KEY] || changes[STORE_KEY] || changes[HISTORY_KEY] || changes[TS_FMT_KEY] || changes[PACE_BADGE_KEY])) render();
+      if (changes[COMPACT_KEY]) compact = !!changes[COMPACT_KEY].newValue;
+      if (el && (changes[MuseHelper.UPDATE_KEY] || changes[STORE_KEY] || changes[HISTORY_KEY] || changes[TS_FMT_KEY] || changes[PACE_BADGE_KEY] || changes[COMPACT_KEY])) render();
     });
   } catch (e) {
     start();

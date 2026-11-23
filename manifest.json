@@ -1,9 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Muse Helper",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Muse (muse.ai) の Web 版に、使い勝手をよくする機能を追加する拡張機能です。",
-  "permissions": ["storage", "alarms"],
+  "permissions": ["storage", "alarms", "notifications"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "host_permissions": ["https://api.github.com/*"],
   "background": {
     "service_worker": "background.js"
@@ -11,12 +17,12 @@
   "content_scripts": [
     {
       "matches": ["https://muse.ai/*"],
-      "js": ["common.js", "content.js", "settings.js", "counter.js", "drafts.js"],
+      "js": ["common.js", "content.js", "settings.js", "counter.js", "drafts.js", "sendkey.js"],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://muse.ai/*"],
-      "js": ["timestamps.js"],
+      "js": ["timestamps.js", "usage-main.js", "devtools-main.js"],
       "run_at": "document_idle",
       "world": "MAIN"
     }

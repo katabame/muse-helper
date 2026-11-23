@@ -37,6 +37,13 @@
     return v === 'rel' || v === 'both' ? v : 'abs';
   };
   const REL_LIMIT = 7 * 24 * 60 * 60 * 1000; // 「相対時刻のみ」でも、これより前は日付と時刻で表示
+  // 日付の区切り線・応答時間: <html data-muse-date-sep="0"> / data-muse-resp-time="0" でオフ(既定はオン)
+  const SEP_ATTR = 'data-muse-date-sep';
+  const RESP_ATTR = 'data-muse-resp-time';
+  const sepOn = () => document.documentElement.getAttribute(SEP_ATTR) !== '0';
+  const respOn = () => document.documentElement.getAttribute(RESP_ATTR) !== '0';
+  const SEP_CLS = 'muse-date-sep';
+  const RESP_MAX = 24 * 60 * 60 * 1000; // これより長い間隔は「応答時間」とみなさない
 
   const pad = (n) => String(n).padStart(2, '0');
   function clock(t, withSec) {
@@ -69,19 +76,78 @@
     return `${t.getFullYear()}/${pad(t.getMonth() + 1)}/${pad(t.getDate())} ${clock(t, true)}`;
   }
 
-  function decorate(el) {
-    const t = findCreatedAt(el);
-    if (!t) return;
-    const iso = t.toISOString();
-    // 自分(user)のメッセージは右寄せ、相手(assistant)は左寄せ
+  // 自分(user)のメッセージか(右寄せ)
+  function isUser(el) {
     const role = (el.getAttribute('data-message-role') || '').toLowerCase();
     const side = (el.getAttribute('data-message-side') || '').toLowerCase();
-    const right = role === 'user' || side === 'right' || side === 'end';
+    return role === 'user' || side === 'right' || side === 'end';
+  }
+
+  // 応答時間: 「12秒」「3分20秒」「1時間5分」
+  function duration(ms) {
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s}秒`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return s % 60 ? `${m}分${s % 60}秒` : `${m}分`;
+    return m % 60 ? `${Math.floor(m / 60)}時間${m % 60}分` : `${Math.floor(m / 60)}時間`;
+  }
+
+  // 区切り線の文字: 「今日 · 11月23日(月)」「昨日 · …」「2025年12月31日(水)」
+  const WD = ['日', '月', '火', '水', '木', '金', '土'];
+  function dayLabel(t) {
+    const now = new Date();
+    const d0 = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((d0(now) - d0(t)) / 86400000);
+    const ymd = `${t.getFullYear() === now.getFullYear() ? '' : `${t.getFullYear()}年`}${t.getMonth() + 1}月${t.getDate()}日(${WD[t.getDay()]})`;
+    return diff === 0 ? `今日 · ${ymd}` : diff === 1 ? `昨日 · ${ymd}` : ymd;
+  }
+
+  // 日付の区切り線(メッセージ要素の先頭に入れる。Muse 側の並びには手を入れない)
+  function setSeparator(el, t, show) {
+    let sep = el.querySelector(':scope > .' + SEP_CLS);
+    if (!show) {
+      if (sep) sep.remove();
+      return;
+    }
+    const text = dayLabel(t);
+    if (sep && sep.dataset.day === t.toDateString() && sep.textContent === text) return;
+    if (!sep) {
+      sep = document.createElement('div');
+      sep.className = SEP_CLS;
+      sep.setAttribute('role', 'separator');
+      sep.style.cssText =
+        'display:flex;align-items:center;gap:10px;width:100%;flex:0 0 100%;box-sizing:border-box;' +
+        'margin:14px 0 8px;padding:0 8px;font:11px/1.2 system-ui,sans-serif;opacity:.55;pointer-events:none;white-space:nowrap;';
+      for (let i = 0; i < 3; i++) {
+        const part = document.createElement('span');
+        if (i !== 1) part.style.cssText = 'flex:1;height:1px;background:currentColor;opacity:.35;';
+        sep.appendChild(part);
+      }
+      el.prepend(sep);
+    }
+    sep.dataset.day = t.toDateString();
+    sep.children[1].textContent = text;
+  }
+
+  // prev: 直前のメッセージ { t, user }(なければ null)
+  function decorate(el, t, prev) {
+    const iso = t.toISOString();
+    const right = isUser(el);
     const align = right ? 'right' : 'left';
 
+    // 日付の区切り線: 表示中の最初のメッセージと、直前のメッセージと日付が違うところ
+    setSeparator(el, t, sepOn() && (!prev || prev.t.toDateString() !== t.toDateString()));
+
+    // 応答時間: 自分のメッセージの直後の相手のメッセージに付ける
+    let resp = '';
+    if (respOn() && !right && prev && prev.user) {
+      const ms = t - prev.t;
+      if (ms >= 0 && ms < RESP_MAX) resp = `${duration(ms)}で応答`;
+    }
+
     let label = el.querySelector(':scope > .' + CLS);
-    const text = format(t);
-    if (label && label.dataset.iso === iso && label.textContent === text && label.style.textAlign === align) return;
+    const text = format(t) + (resp ? `・${resp}` : '');
+    if (label && label.dataset.iso === iso && label.dataset.resp === resp && label.textContent === text && label.style.textAlign === align) return;
     if (!label) {
       // 行全体(幅100%)はマウスに反応させず、Muse 側の操作を邪魔しないようにする。
       // 文字の部分(span)だけ反応させて、マウスを乗せると秒までの日時が出るようにする。
@@ -98,8 +164,9 @@
     const span = textSpan(label);
     label.style.textAlign = align;
     label.dataset.iso = iso;
+    label.dataset.resp = resp;
     span.textContent = text;
-    span.title = full(t);
+    span.title = full(t) + (resp ? `(${resp})` : '');
   }
 
   // ラベル内の文字の span(古い形式のラベルなら作り直す)
@@ -115,8 +182,14 @@
   }
 
   function scan() {
+    let prev = null;
     document.querySelectorAll('[data-message-id]').forEach((el) => {
-      try { decorate(el); } catch (e) {}
+      try {
+        const t = findCreatedAt(el);
+        if (!t) return;
+        decorate(el, t, prev);
+        prev = { t, user: isUser(el) };
+      } catch (e) {}
     });
   }
 
@@ -126,14 +199,19 @@
     timer = setTimeout(scan, 200);
   }).observe(document.documentElement, { childList: true, subtree: true });
   // 表示形式が切り替わったら即座に描き直す
-  new MutationObserver(scan).observe(document.documentElement, { attributes: true, attributeFilter: [FMT_ATTR, MODE_ATTR] });
+  new MutationObserver(scan).observe(document.documentElement, { attributes: true, attributeFilter: [FMT_ATTR, MODE_ATTR, SEP_ATTR, RESP_ATTR] });
   // 相対時刻(と日付の切り替わり)を反映するため、1分ごとに既存のラベルを書き直す
   setInterval(() => {
     document.querySelectorAll('.' + CLS).forEach((label) => {
       const t = new Date(label.dataset.iso);
       if (isNaN(t)) return;
-      const text = format(t);
+      const text = format(t) + (label.dataset.resp ? `・${label.dataset.resp}` : '');
       if (label.textContent !== text) textSpan(label).textContent = text;
+    });
+    // 日付が変わったら「今日」「昨日」を付け直す
+    document.querySelectorAll('.' + SEP_CLS).forEach((sep) => {
+      const t = new Date(sep.dataset.day);
+      if (!isNaN(t) && sep.children[1] && sep.children[1].textContent !== dayLabel(t)) sep.children[1].textContent = dayLabel(t);
     });
   }, 60000);
   scan();
