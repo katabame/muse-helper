@@ -556,15 +556,28 @@
       tr.firstChild.style.cssText = 'padding:1px 16px 1px 0;font-weight:normal;text-align:left;';
       table.appendChild(tr);
     }
-    pts.slice(-50).reverse().forEach((p) => {
+    // 同じ値が続く記録は1行にまとめる(「11/24 3:13 am 〜 5:16 am」)。先週の値は、まとめた最後の時刻で比べる
+    const groups = [];
+    for (const p of pts) {
+      const g = groups[groups.length - 1];
+      if (g && g.used === p.used) g.to = p.at;
+      else groups.push({ used: p.used, from: p.at, to: p.at });
+    }
+    const range = (g) => {
+      const a = M.when(g.from, fmt12, true), b = M.when(g.to, fmt12, true);
+      if (g.from === g.to) return a;
+      const [da, ...ta] = a.split(' '), [db, ...tb] = b.split(' ');
+      return da === db ? `${da} ${ta.join(' ')} 〜 ${tb.join(' ')}` : `${a} 〜 ${b}`;
+    };
+    groups.slice(-50).reverse().forEach((g) => {
       const tr = el('tr', '');
-      const a = el('td', '', M.when(p.at, fmt12, true));
-      const b = el('td', 'text-text-primary', `${p.used}%`);
+      const a = el('td', '', range(g));
+      const b = el('td', 'text-text-primary', `${g.used}%`);
       a.style.cssText = 'padding:1px 16px 1px 0;';
       b.style.textAlign = 'right';
       tr.append(a, b);
       if (prev) {
-        const pv = prevAt(p.at);
+        const pv = prevAt(g.to);
         const c = el('td', '', pv != null ? pct(pv) : '—');
         c.style.cssText = 'padding:1px 0 1px 16px;text-align:right;';
         tr.appendChild(c);
