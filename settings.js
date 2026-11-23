@@ -30,7 +30,9 @@
     [MuseHelper.DATE_SEP_KEY]: true,
     [MuseHelper.RESP_TIME_KEY]: true,
     [MuseHelper.NOTIFY_KEY]: true,
+    [MuseHelper.SHORTCUTS_KEY]: true,
   };
+  let bookmarkCount = 0;
 
   // ---------- スタイル ----------
   const style = document.createElement('style');
@@ -131,6 +133,7 @@
 
     const body = el('div', 'space-y-6 pb-4 px-6');
     body.appendChild(buildPaceSection());
+    body.appendChild(buildStatsSection());
     body.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', 'メッセージの時刻'));
 
     const group = el('div', 'flex flex-col gap-2');
@@ -155,6 +158,8 @@
       { value: 'enter', title: 'Enter で送信', example: 'Muse の標準の動き(Shift+Enter で改行)' },
       { value: 'mod-enter', title: 'Ctrl/⌘+Enter で送信', example: 'Enter で改行します。長い文章を書くときの誤送信を防げます' },
     ], setSendKey));
+    body.appendChild(buildShortcutsSection());
+    body.appendChild(buildBookmarksSection());
 
     body.appendChild(buildNotifySection());
     body.appendChild(buildDraftsSection());
@@ -329,6 +334,133 @@
     sendKey = v === 'mod-enter' ? 'mod-enter' : 'enter';
     document.querySelectorAll('.' + PANE).forEach(syncPane);
     try { chrome.storage.local.set({ [MuseHelper.SEND_KEY_KEY]: sendKey }); } catch (e) {}
+  }
+
+  // ---------- この会話(統計) ----------
+  // 表示中のメッセージから数える(Muse が読み込んでいない古いメッセージは含まれない)
+  function conversationStats() {
+    const list = MuseHelper.messages();
+    if (!list.length) return null;
+    const side = { user: { n: 0, chars: 0 }, other: { n: 0, chars: 0 } };
+    const resp = [];
+    let prev = null;
+    for (const m of list) {
+      const s = m.user ? side.user : side.other;
+      s.n++;
+      s.chars += MuseHelper.charCount(MuseHelper.messageText(m.el).replace(/\s+/g, ''));
+      // 応答時間: 自分のメッセージの直後の相手のメッセージまで(1日以上は除く。timestamps.js と同じ)
+      if (!m.user && prev && prev.user && m.at != null && prev.at != null) {
+        const d = m.at - prev.at;
+        if (d >= 0 && d < MuseHelper.DAY) resp.push(d);
+      }
+      prev = m;
+    }
+    const times = list.map((m) => m.at).filter((t) => t != null);
+    resp.sort((a, b) => a - b);
+    return {
+      total: list.length, user: side.user, other: side.other, resp,
+      first: times.length ? Math.min(...times) : null, last: times.length ? Math.max(...times) : null,
+    };
+  }
+
+  function buildStatsSection() {
+    const wrap = el('div', 'space-y-1.5');
+    wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', 'この会話'));
+    const card = el('div', 'muse-helper-stats bg-fill-secondary-elevated rounded-16 p-1.5');
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  function syncStats(pane) {
+    const card = pane.querySelector('.muse-helper-stats');
+    if (!card) return;
+    const M = MuseHelper, fmt12 = tsFormat === '12';
+    const st = conversationStats();
+    const rows = [];
+    if (!st) {
+      rows.push(['会話を開いているときに表示されます', '会話の画面で設定を開くと、メッセージ数や文字数などを確認できます']);
+    } else {
+      const n = (v) => v.toLocaleString();
+      const avg = (s) => (s.n ? `平均 ${n(Math.round(s.chars / s.n))}字` : '');
+      rows.push([`メッセージ ${n(st.total)}件`, `自分 ${n(st.user.n)}件 ・ 相手 ${n(st.other.n)}件`]);
+      rows.push([`文字数 ${n(st.user.chars + st.other.chars)}字(空白を除く)`,
+        `自分 ${n(st.user.chars)}字(${avg(st.user)}) ・ 相手 ${n(st.other.chars)}字(${avg(st.other)})`]);
+      if (st.resp.length) {
+        const r = st.resp, mid = r.length % 2 ? r[(r.length - 1) / 2] : (r[r.length / 2 - 1] + r[r.length / 2]) / 2;
+        const mean = r.reduce((a, b) => a + b, 0) / r.length;
+        rows.push([`応答時間 中央値 ${M.duration(mid)}`,
+          `平均 ${M.duration(mean)} ・ 最短 ${M.duration(r[0])} ・ 最長 ${M.duration(r[r.length - 1])}(${r.length}回)`]);
+      }
+      if (st.first != null) {
+        const [da, ...ta] = M.when(st.first, fmt12, true).split(' '), [db, ...tb] = M.when(st.last, fmt12, true).split(' ');
+        rows.push([da === db ? `${da} ${ta.join(' ')} 〜 ${tb.join(' ')}` : `${da} ${ta.join(' ')} 〜 ${db} ${tb.join(' ')}`,
+          st.last > st.first ? `期間 ${M.duration(st.last - st.first)}` : '']);
+      }
+      rows.push(['', '表示中のメッセージから数えています。読み込まれていない古いメッセージは含まれません']);
+    }
+    // 中身が同じなら作り直さない
+    const sig = JSON.stringify(rows);
+    if (card.dataset.sig === sig) return;
+    card.dataset.sig = sig;
+    card.textContent = '';
+    rows.forEach(([title, sub], i) => {
+      if (i) card.appendChild(divider());
+      const r = row();
+      r.appendChild(title ? texts(title, sub || null) : texts('', sub));
+      if (!title) r.querySelector('.text-subheadline').remove();
+      card.appendChild(r);
+    });
+  }
+
+  // ---------- ショートカット ----------
+  function buildShortcutsSection() {
+    const wrap = el('div', 'space-y-1.5');
+    wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', 'キーボードショートカット'));
+    const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
+    card.appendChild(prefSwitch(MuseHelper.SHORTCUTS_KEY, 'ショートカットを使う',
+      `${MuseHelper.ALT === '⌥' ? 'Option' : 'Alt'} キーと組み合わせて使います。会話の画面で ${MuseHelper.ALT}/ を押すと一覧が出ます`));
+    for (const sc of MuseHelper.SHORTCUTS) {
+      card.appendChild(divider());
+      const r = row();
+      r.appendChild(texts(sc.title, sc.sub || null));
+      const k = el('kbd', 'text-subheadline text-text-secondary ps-2 self-center', MuseHelper.ALT + sc.key);
+      k.style.fontFamily = 'ui-monospace, monospace';
+      r.appendChild(k);
+      card.appendChild(r);
+    }
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  // ---------- ブックマーク ----------
+  // 設定ダイアログを閉じる(Muse の「閉じる」ボタン。なければ Esc)
+  function closeSettings() {
+    const s = findSettings();
+    const btn = s && s.dialog.querySelector('button[aria-label="閉じる"], button[aria-label="Close"]');
+    if (btn) btn.click();
+    else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+  }
+
+  function buildBookmarksSection() {
+    const wrap = el('div', 'space-y-1.5');
+    wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', 'ブックマーク'));
+    const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
+    const countRow = row();
+    countRow.appendChild(texts('保存中のブックマーク', 'メッセージにマウスを乗せ、時刻の横の ☆ を押すと追加できます'));
+    countRow.appendChild(el('div', 'muse-helper-bm-num flex items-center self-center ps-2 text-subheadline text-text-primary'));
+    card.appendChild(countRow);
+    card.appendChild(divider());
+    card.appendChild(actionRow('muse-helper-bm-open', 'button', '一覧を開く', `設定を閉じて一覧を表示します(${MuseHelper.ALT}B でも開けます)`, () => {
+      closeSettings();
+      setTimeout(() => MuseHelper.bookmarks && MuseHelper.bookmarks.open(), 150);
+    }));
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  function syncBookmarks(pane) {
+    const num = pane.querySelector('.muse-helper-bm-num');
+    if (num) num.textContent = `${bookmarkCount}件`;
   }
 
   // ---------- 通知 ----------
@@ -873,6 +1005,8 @@
     syncPace(pane);
     syncDrafts(pane);
     syncPrefs(pane);
+    syncBookmarks(pane);
+    syncStats(pane);
     pane.querySelectorAll('[role="radio"]').forEach((r) => {
       const cur = { mode: tsMode, format: tsFormat, sendkey: sendKey }[r.dataset.group];
       r.setAttribute('aria-checked', String(r.dataset.value === cur));
@@ -912,6 +1046,7 @@
         e.stopPropagation();
         const cur = findSettings();
         if (cur) setOpen(cur, true);
+        document.querySelectorAll('.' + PANE).forEach(syncStats);
       });
       s.navList.appendChild(nav);
     }
@@ -949,7 +1084,8 @@
 
   try {
     chrome.storage.local.get([TS_FMT_KEY, TS_MODE_KEY, MuseHelper.UPDATE_KEY, MuseHelper.USAGE_KEY, MuseHelper.HISTORY_KEY, MuseHelper.PACE_BADGE_KEY,
-      MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY, MuseHelper.DEV_MODE_KEY, MuseHelper.SEND_KEY_KEY, ...Object.keys(prefs)], (v) => {
+      MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY, MuseHelper.DEV_MODE_KEY, MuseHelper.SEND_KEY_KEY, MuseHelper.BOOKMARKS_KEY, ...Object.keys(prefs)], (v) => {
+      bookmarkCount = Object.keys((v && v[MuseHelper.BOOKMARKS_KEY]) || {}).length;
       for (const k of Object.keys(prefs)) prefs[k] = !(v && v[k] === false);
       sendKey = v && v[MuseHelper.SEND_KEY_KEY] === 'mod-enter' ? 'mod-enter' : 'enter';
       showPace = !(v && v[MuseHelper.PACE_BADGE_KEY] === false);
@@ -969,6 +1105,10 @@
         if (changes[TS_FMT_KEY]) tsFormat = changes[TS_FMT_KEY].newValue === '12' ? '12' : '24';
         if (changes[TS_MODE_KEY]) tsMode = normMode(changes[TS_MODE_KEY].newValue);
         document.querySelectorAll('.' + PANE).forEach(syncPane);
+      }
+      if (area === 'local' && changes[MuseHelper.BOOKMARKS_KEY]) {
+        bookmarkCount = Object.keys(changes[MuseHelper.BOOKMARKS_KEY].newValue || {}).length;
+        document.querySelectorAll('.' + PANE).forEach(syncBookmarks);
       }
       if (area === 'local' && changes[MuseHelper.UPDATE_KEY]) {
         update = changes[MuseHelper.UPDATE_KEY].newValue || null;

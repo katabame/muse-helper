@@ -140,6 +140,76 @@ globalThis.MuseHelper = (() => {
     return n;
   }
 
+  // ---------- チャットのメッセージ(会話の統計・ショートカット・ブックマークで共有) ----------
+  // 時刻は timestamps.js(MAIN world)がメッセージに付けたラベルの data-iso から読む
+  const OWN_IN_MESSAGE = '.muse-ts-label, .muse-date-sep, .muse-bm-btn';
+  function isUserMessage(el) {
+    const role = (el.getAttribute('data-message-role') || '').toLowerCase();
+    const side = (el.getAttribute('data-message-side') || '').toLowerCase();
+    return role === 'user' || side === 'right' || side === 'end';
+  }
+  // 表示中のメッセージ [{ el, id, user, at }](at は読めなければ null)
+  function messages() {
+    return [...document.querySelectorAll('[data-message-id]')].map((el) => {
+      const label = el.querySelector(':scope > .muse-ts-label');
+      const t = label ? Date.parse(label.dataset.iso) : NaN;
+      return { el, id: el.getAttribute('data-message-id'), user: isUserMessage(el), at: Number.isFinite(t) ? t : null };
+    });
+  }
+  // メッセージの本文(Muse のボタンの文字や Muse Helper の表示は除く。段落の間は空白1つ)
+  const BLOCK = 'p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, td, th, div';
+  function messageText(el) {
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => (n.parentElement && n.parentElement.closest(`${OWN_IN_MESSAGE}, button, [aria-hidden="true"]`)
+        ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    });
+    let out = '', block = null;
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      const b = n.parentElement.closest(BLOCK);
+      if (block && b !== block) out += ' ';
+      block = b;
+      out += n.textContent;
+    }
+    return out.replace(/\s+/g, ' ').trim();
+  }
+  // メッセージまでスクロールして、少しの間枠で示す
+  function scrollToMessage(el, block = 'start') {
+    el.scrollIntoView({ block, behavior: 'smooth' });
+    el.classList.add('muse-helper-flash');
+    clearTimeout(el.__museFlash);
+    el.__museFlash = setTimeout(() => el.classList.remove('muse-helper-flash'), 1600);
+  }
+  // 時間の長さ: 「12秒」「3分20秒」「1時間5分」「2日と3時間」
+  function duration(ms) {
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s}秒`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return s % 60 ? `${m}分${s % 60}秒` : `${m}分`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return m % 60 ? `${h}時間${m % 60}分` : `${h}時間`;
+    return h % 24 ? `${Math.floor(h / 24)}日と${h % 24}時間` : `${Math.floor(h / 24)}日`;
+  }
+  try {
+    const st = document.createElement('style');
+    st.textContent = `
+      [data-message-id] { scroll-margin-top: 72px; scroll-margin-bottom: 24px; }
+      .muse-helper-flash { outline: 2px solid #2a78d6 !important; outline-offset: 4px; border-radius: 12px; }
+      html.dark .muse-helper-flash { outline-color: #3987e5 !important; }`;
+    (document.head || document.documentElement).appendChild(st);
+  } catch (e) {}
+
+  // キーボードショートカット(keys.js と設定画面で共有)。Mac では Option キー
+  const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const ALT = IS_MAC ? '⌥' : 'Alt+';
+  const SHORTCUTS = [
+    { code: 'KeyI', key: 'I', title: '入力欄にフォーカス' },
+    { code: 'KeyJ', key: 'J', title: '最新のメッセージへ' },
+    { code: 'ArrowUp', key: '↑', title: '前のメッセージへ', sub: '入力欄に文章があるときは、入力欄の中の移動になります' },
+    { code: 'ArrowDown', key: '↓', title: '次のメッセージへ', sub: '入力欄に文章があるときは、入力欄の中の移動になります' },
+    { code: 'KeyB', key: 'B', title: 'ブックマークの一覧を開く/閉じる' },
+    { code: 'Slash', key: '/', title: 'ショートカットの一覧を表示' },
+  ];
+
   let VERSION = '';
   try { VERSION = chrome.runtime.getManifest().version; } catch (e) {}
 
@@ -160,6 +230,8 @@ globalThis.MuseHelper = (() => {
     NOTIFY_LOW: 20, // 残りがこの % 以下になったら通知
     DEV_MODE_KEY: 'museDevMode', // true なら設定画面に開発者向けツールを出し、Console に museHelper を公開
     HISTORY_KEY: 'museUsageHistory', // [{ used, at }, ...] 使用率の記録(直近ペースの計算用)
+    BOOKMARKS_KEY: 'museBookmarks', // { [メッセージID]: { path, title, text, at, user, savedAt } }
+    SHORTCUTS_KEY: 'museShortcuts', // false ならキーボードショートカットを使わない(既定は使う)
     API_LATEST: `https://api.github.com/repos/${REPO}/releases/latest`,
     RELEASES_URL: `https://github.com/${REPO}/releases/latest`,
 
@@ -183,6 +255,7 @@ globalThis.MuseHelper = (() => {
     HOUR, DAY, WEEK,
     resetDate, forecast, severity, when, projText,
     composerInput, composerLayout, charCount,
+    messages, messageText, scrollToMessage, duration, ALT, SHORTCUTS,
     SEVERITY_COLOR: ['#16a34a', '#d97706', '#dc2626'], // 設定画面(明暗どちらでも読める濃さ)
     fmt12: () => document.documentElement.getAttribute('data-muse-ts-format') === '12',
     signed(n, digits = 0) {

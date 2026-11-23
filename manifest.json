@@ -17,7 +17,7 @@
   "content_scripts": [
     {
       "matches": ["https://muse.ai/*"],
-      "js": ["common.js", "content.js", "settings.js", "counter.js", "drafts.js", "sendkey.js"],
+      "js": ["common.js", "content.js", "settings.js", "counter.js", "drafts.js", "sendkey.js", "bookmarks.js", "keys.js"],
       "run_at": "document_idle"
     },
     {

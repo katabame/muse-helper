@@ -10,7 +10,7 @@
 
   const MSG = 'muse-helper';
   const DEV_ATTR = 'data-muse-helper-dev';
-  const OWN = '#muse-usage-badge, .muse-helper-pane, .muse-helper-nav, #muse-helper-counter, #muse-helper-draft-chip';
+  const OWN = '#muse-usage-badge, .muse-helper-pane, .muse-helper-nav, #muse-helper-counter, #muse-helper-draft-chip, .muse-bm-btn, #muse-helper-bookmarks, #muse-helper-keys-help';
   const RE_USAGE = /usage|quota|limit|token|credit|plan|reset|remain|percent|budget|consum|allowance|weekly/i;
 
   // ID らしきもの(10桁以上の数字・UUID)を伏せる
