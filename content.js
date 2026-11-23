@@ -2,6 +2,7 @@
   'use strict';
   const STORE_KEY = 'museUsageBadge';
   const POS_KEY = 'museUsageBadgePos';
+  const TS_FMT_KEY = 'museTsFormat'; // '12' | '24'(settings.js で設定)
   const STALE_MS = 60 * 60 * 1000; // 1時間以上更新がなければ「古い」表示
 
   let state = null; // { label, used, reset, extra, at }
@@ -122,6 +123,17 @@
       (state.extra ? `追加トークン: 残り${state.extra}\n` : '') +
       '値は設定画面(利用状況)を開いたときに更新されます。\nドラッグで移動できます。';
   }
+
+  // ---------- タイムスタンプ表示形式(MAIN world の timestamps.js へ属性で伝える) ----------
+  function applyTsFormat(v) {
+    document.documentElement.setAttribute('data-muse-ts-format', v === '12' ? '12' : '24');
+  }
+  try {
+    chrome.storage.local.get(TS_FMT_KEY, (v) => applyTsFormat(v && v[TS_FMT_KEY]));
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[TS_FMT_KEY]) applyTsFormat(changes[TS_FMT_KEY].newValue);
+    });
+  } catch (e) {}
 
   // ---------- 起動 ----------
   let timer;

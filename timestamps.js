@@ -27,16 +27,26 @@
     return null;
   }
 
+  // 表示形式: content.js が <html data-muse-ts-format="12|24"> に設定する(既定は24時間)
+  const FMT_ATTR = 'data-muse-ts-format';
+  const is12h = () => document.documentElement.getAttribute(FMT_ATTR) === '12';
+
   const pad = (n) => String(n).padStart(2, '0');
+  function clock(t, withSec) {
+    const sec = withSec ? `:${pad(t.getSeconds())}` : '';
+    if (!is12h()) return `${pad(t.getHours())}:${pad(t.getMinutes())}${sec}`;
+    const h = t.getHours();
+    return `${h % 12 || 12}:${pad(t.getMinutes())}${sec} ${h < 12 ? 'am' : 'pm'}`;
+  }
   function format(t) {
     const now = new Date();
-    const hm = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+    const hm = clock(t, false);
     if (t.toDateString() === now.toDateString()) return hm;
     const md = `${t.getMonth() + 1}/${t.getDate()}`;
     return t.getFullYear() === now.getFullYear() ? `${md} ${hm}` : `${t.getFullYear()}/${md} ${hm}`;
   }
   function full(t) {
-    return `${t.getFullYear()}/${pad(t.getMonth() + 1)}/${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
+    return `${t.getFullYear()}/${pad(t.getMonth() + 1)}/${pad(t.getDate())} ${clock(t, true)}`;
   }
 
   function decorate(el) {
@@ -50,7 +60,8 @@
     const align = right ? 'right' : 'left';
 
     let label = el.querySelector(':scope > .' + CLS);
-    if (label && label.dataset.iso === iso && label.style.textAlign === align) return;
+    const fmt = is12h() ? '12' : '24';
+    if (label && label.dataset.iso === iso && label.dataset.fmt === fmt && label.style.textAlign === align) return;
     if (!label) {
       label = document.createElement('div');
       label.className = CLS;
@@ -61,6 +72,7 @@
     }
     label.style.textAlign = align;
     label.dataset.iso = iso;
+    label.dataset.fmt = fmt;
     label.textContent = format(t);
     label.title = full(t);
   }
@@ -76,5 +88,7 @@
     clearTimeout(timer);
     timer = setTimeout(scan, 200);
   }).observe(document.documentElement, { childList: true, subtree: true });
+  // 表示形式が切り替わったら即座に描き直す
+  new MutationObserver(scan).observe(document.documentElement, { attributes: true, attributeFilter: [FMT_ATTR] });
   scan();
 })();
