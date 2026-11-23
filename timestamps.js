@@ -102,41 +102,48 @@
     return diff === 0 ? `今日 · ${ymd}` : diff === 1 ? `昨日 · ${ymd}` : ymd;
   }
 
-  // 日付の区切り線(メッセージ要素の先頭に入れる。Muse 側の並びには手を入れない)
-  function setSeparator(el, t, show) {
-    let sep = el.querySelector(':scope > .' + SEP_CLS);
-    if (!show) {
-      if (sep) sep.remove();
-      return;
-    }
+  // 日付の区切り線。
+  // メッセージ要素の中に入れると、Muse が要素の高さを固定しているため中身があふれて次のメッセージに重なる。
+  // そこで、メッセージの列(親要素)の中で、そのメッセージの直前の兄弟として入れる(独立した1行として場所をとる)。
+  // 区切り線には対象のメッセージ ID を記録し、Muse がメッセージを足して位置がずれたら付け直す。
+  function setSeparator(el, t, show, keep) {
+    // 以前の版(メッセージ要素の中に入れていた)の区切り線は消す
+    const legacy = el.querySelector(':scope > .' + SEP_CLS);
+    if (legacy) legacy.remove();
+    if (!show || !el.parentElement) return;
+    const id = el.getAttribute('data-message-id');
+    let sep = [...el.parentElement.querySelectorAll(':scope > .' + SEP_CLS)].find((x) => x.dataset.for === id);
+    keep.add(sep || null);
     const text = dayLabel(t);
-    if (sep && sep.dataset.day === t.toDateString() && sep.textContent === text) return;
+    if (sep && sep.nextElementSibling === el && sep.dataset.day === t.toDateString() && sep.textContent === text) return;
     if (!sep) {
       sep = document.createElement('div');
       sep.className = SEP_CLS;
       sep.setAttribute('role', 'separator');
       sep.style.cssText =
-        'display:flex;align-items:center;gap:10px;width:100%;flex:0 0 100%;box-sizing:border-box;' +
-        'margin:14px 0 8px;padding:0 8px;font:11px/1.2 system-ui,sans-serif;opacity:.55;pointer-events:none;white-space:nowrap;';
+        'display:flex;align-items:center;gap:10px;width:100%;flex:none;box-sizing:border-box;' +
+        'margin:16px 0 12px;padding:0 8px;font:11px/1.2 system-ui,sans-serif;opacity:.55;pointer-events:none;white-space:nowrap;';
       for (let i = 0; i < 3; i++) {
         const part = document.createElement('span');
         if (i !== 1) part.style.cssText = 'flex:1;height:1px;background:currentColor;opacity:.35;';
         sep.appendChild(part);
       }
-      el.prepend(sep);
     }
+    sep.dataset.for = id;
+    keep.add(sep);
+    if (sep.nextElementSibling !== el) el.parentElement.insertBefore(sep, el);
     sep.dataset.day = t.toDateString();
     sep.children[1].textContent = text;
   }
 
-  // prev: 直前のメッセージ { t, user }(なければ null)
-  function decorate(el, t, prev) {
+  // prev: 直前のメッセージ { t, user }(なければ null)、keep: 今回残す区切り線
+  function decorate(el, t, prev, keep) {
     const iso = t.toISOString();
     const right = isUser(el);
     const align = right ? 'right' : 'left';
 
     // 日付の区切り線: 表示中の最初のメッセージと、直前のメッセージと日付が違うところ
-    setSeparator(el, t, sepOn() && (!prev || prev.t.toDateString() !== t.toDateString()));
+    setSeparator(el, t, sepOn() && (!prev || prev.t.toDateString() !== t.toDateString()), keep);
 
     // 応答時間: 自分のメッセージの直後の相手のメッセージに付ける
     let resp = '';
@@ -183,14 +190,17 @@
 
   function scan() {
     let prev = null;
+    const keep = new Set();
     document.querySelectorAll('[data-message-id]').forEach((el) => {
       try {
         const t = findCreatedAt(el);
         if (!t) return;
-        decorate(el, t, prev);
+        decorate(el, t, prev, keep);
         prev = { t, user: isUser(el) };
       } catch (e) {}
     });
+    // 対象のメッセージがなくなった・不要になった区切り線を消す
+    document.querySelectorAll('.' + SEP_CLS).forEach((sep) => { if (!keep.has(sep)) sep.remove(); });
   }
 
   let timer;
