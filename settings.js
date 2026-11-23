@@ -44,8 +44,9 @@
     .${PANE} [role="radio"] .muse-helper-check { visibility: hidden; }
     .${PANE} [role="radio"][aria-checked="true"] .muse-helper-check { visibility: visible; }
     /* 使用率グラフの系列色(既定パレットの1番目。Muse のダークモードは <html class="dark">) */
-    .${PANE} .muse-helper-chart { --muse-helper-series: #2a78d6; --muse-helper-surface: #fcfcfb; }
-    html.dark .${PANE} .muse-helper-chart { --muse-helper-series: #3987e5; --muse-helper-surface: #1a1a19; }
+    /* 先週の線は2番目(オレンジ)。どちらのモードも検証スクリプトで確認済み */
+    .${PANE} .muse-helper-chart { --muse-helper-series: #2a78d6; --muse-helper-prev: #eb6834; --muse-helper-surface: #fcfcfb; }
+    html.dark .${PANE} .muse-helper-chart { --muse-helper-series: #3987e5; --muse-helper-prev: #d95926; --muse-helper-surface: #1a1a19; }
     /* オン/オフのスイッチ */
     .${PANE} [role="switch"] { cursor: pointer; }
     .muse-helper-switch { position: relative; width: 40px; height: 24px; border-radius: 12px; flex: none;
@@ -358,7 +359,8 @@
 
   // ---------- 使用率の推移グラフ ----------
   // 今週(週の始まり〜リセット)の使用率の折れ線と、目安(週の経過割合)の線、平均ペースでの予測(破線)。
-  // 1系列なので凡例は付けず、目安・予測・上限は線の端に直接ラベルを付ける。マウスを乗せると各記録の値が出る。
+  // 先週の記録があれば、1週間ずらして同じ位置に重ねる(そのときは凡例を出す)。
+  // 目安・予測・上限・先週は線の端に直接ラベルを付ける。マウスを乗せると各記録の値が出る。
   const SVG = 'http://www.w3.org/2000/svg';
   function s(tag, attrs, parent) {
     const n = document.createElementNS(SVG, tag);
@@ -388,14 +390,47 @@
     if (!pts.length || pts[pts.length - 1].at < f.at) pts.push({ at: f.at, used: f.used });
     const anchor = { at: f.weekStart, used: 0, anchor: true };
 
+    // 先週(1週間前の同じ期間)の記録。時刻を1週間ずらして今週の軸に重ねる
+    const prevPts = history.filter((p) => p.at >= f.weekStart - M.WEEK && p.at < f.weekStart && Number.isFinite(p.used)).sort((a, b) => a.at - b.at);
+    for (let i = prevPts.length - 1; i > 0; i--) if (prevPts[i].used < prevPts[i - 1].used) { prevPts.splice(0, i); break; }
+    const prev = prevPts.length >= 2 ? prevPts.map((p) => ({ at: p.at + M.WEEK, used: p.used })) : null;
+    // 先週の同じ時刻の値(記録の間は直線で補う。記録の範囲外は null)
+    const prevAt = (t) => {
+      if (!prev || t < prev[0].at || t > prev[prev.length - 1].at) return null;
+      const i = prev.findIndex((p) => p.at >= t);
+      if (prev[i].at === t || i === 0) return prev[i].used;
+      const a = prev[i - 1], b = prev[i];
+      return a.used + ((b.used - a.used) * (t - a.at)) / (b.at - a.at);
+    };
+    const pct = (v) => `${Math.round(v * 10) / 10}%`;
+    const prevNow = prevAt(f.at);
+
     const W = 560, H = 176, L = 34, R = 62, T = 12, B = 24;
     const x = (t) => L + ((t - f.weekStart) / (f.resetAt - f.weekStart)) * (W - L - R);
     const y = (v) => T + (1 - Math.min(100, Math.max(0, v)) / 100) * (H - T - B);
 
+    // 凡例(2系列のときだけ)
+    if (prev) {
+      const legend = el('div', 'text-caption-1 text-text-secondary');
+      legend.style.cssText = 'display:flex;gap:16px;margin-bottom:4px;';
+      const d = new Date(f.weekStart - M.WEEK), e = new Date(f.weekStart - 1);
+      for (const [color, text] of [['var(--muse-helper-series)', '今週'],
+        ['var(--muse-helper-prev)', `先週(${d.getMonth() + 1}/${d.getDate()}〜${e.getMonth() + 1}/${e.getDate()})`]]) {
+        const item = el('span', '');
+        item.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
+        const sw = el('span', '');
+        sw.style.cssText = `display:inline-block;width:14px;height:2px;border-radius:1px;background:${color};`;
+        item.append(sw, text);
+        legend.appendChild(item);
+      }
+      box.appendChild(legend);
+    }
+
     const wrap = el('div', '');
     wrap.style.cssText = 'position:relative;';
     const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img',
-      'aria-label': `今週の使用率の推移。現在 ${f.used}%、目安 ${Math.round(f.target)}%` });
+      'aria-label': `今週の使用率の推移。現在 ${f.used}%、目安 ${Math.round(f.target)}%` +
+        (prevNow != null ? `、先週の同じ時点 ${Math.round(prevNow)}%` : '') });
     svg.style.cssText = 'display:block;overflow:visible;font:10px system-ui,sans-serif;';
     wrap.appendChild(svg);
     box.appendChild(wrap);
@@ -420,8 +455,9 @@
       const t = s('text', { x: xx, y: yy, 'text-anchor': anchorPos, fill: 'currentColor', 'fill-opacity': '0.75' }, svg);
       t.textContent = text;
     };
+    // 右端のラベル(上限・予測・先週)は、重ならないよう最後にまとめて並べる
+    const right = [{ y: y(100) + 3.5, text: '上限', fixed: true }];
     // 上限(100%)と目安の線
-    label(W - R + 6, y(100) + 3.5, '上限');
     s('line', { x1: x(f.weekStart), y1: y(0), x2: x(f.resetAt), y2: y(100), stroke: 'currentColor', 'stroke-opacity': '0.45', 'stroke-width': '1.5' }, svg);
     // 「目安」は線の途中(週の 15% 地点)、線の左上に
     const tx = f.weekStart + (f.resetAt - f.weekStart) * 0.15;
@@ -434,9 +470,23 @@
       const endV = f.avg.hitAt != null ? 100 : f.avg.atReset;
       s('line', { x1: x(f.at), y1: y(f.used), x2: x(endT), y2: y(endV), stroke: series, 'stroke-width': '2',
         'stroke-dasharray': '5 4', 'stroke-opacity': '0.8', 'stroke-linecap': 'round' }, svg);
-      if (f.avg.hitAt == null) label(W - R + 6, Math.max(y(endV) + 3.5, y(100) + 16), `予測 ${Math.round(endV)}%`);
+      if (f.avg.hitAt == null) right.push({ y: y(endV) + 3.5, text: `予測 ${Math.round(endV)}%` });
       else label(x(endT), y(100) - 4, `${M.when(endT, fmt12)} 上限`, 'middle');
     }
+
+    // 先週(今週の線の下に描く)
+    if (prev) {
+      s('path', { d: prev.map((p, i) => `${i ? 'L' : 'M'}${x(p.at).toFixed(1)},${y(p.used).toFixed(1)}`).join(' '),
+        fill: 'none', stroke: 'var(--muse-helper-prev)', 'stroke-width': '2', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+      const end = prev[prev.length - 1];
+      const text = `先週 ${Math.round(end.used)}%`;
+      // 週の終わりまで記録があれば右端の列に、途中で途切れていれば線の端に
+      if (f.resetAt - end.at <= 12 * M.HOUR) right.push({ y: y(end.used) + 3.5, text });
+      else label(x(end.at) + 6, y(end.used) - 6, text);
+    }
+    right.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < right.length; i++) right[i].y = Math.max(right[i].y, right[i - 1].y + 12);
+    right.forEach((r) => label(W - R + 6, r.y, r.text));
 
     // 実績(折れ線)。週の始まり〜最初の記録は記録がないので薄く
     const all = [anchor, ...pts];
@@ -449,6 +499,10 @@
     // マウスを乗せたとき: 一番近い記録に縦線と値
     const hair = s('line', { y1: T, y2: H - B, stroke: 'currentColor', 'stroke-opacity': '0.35', 'stroke-width': '1', visibility: 'hidden' }, svg);
     const dot = s('circle', { r: '4', fill: series, stroke: 'var(--muse-helper-surface)', 'stroke-width': '2', visibility: 'hidden' }, svg);
+    const pdot = s('circle', { r: '4', fill: 'var(--muse-helper-prev)', stroke: 'var(--muse-helper-surface)', 'stroke-width': '2', visibility: 'hidden' }, svg);
+    // 乗せられる位置: 今週の記録 + 今より先にある先週の記録
+    const spots = [...pts.map((p) => ({ at: p.at, used: p.used })),
+      ...(prev || []).filter((p) => p.at > f.at).map((p) => ({ at: p.at, used: null }))];
     const tip = el('div', 'text-caption-1 text-text-primary');
     tip.style.cssText = 'position:absolute;top:0;pointer-events:none;display:none;white-space:nowrap;padding:4px 8px;border-radius:8px;' +
       'background:var(--muse-helper-surface);box-shadow:0 1px 6px rgba(0,0,0,.25);';
@@ -457,13 +511,22 @@
     hit.addEventListener('pointermove', (e) => {
       const r = svg.getBoundingClientRect();
       const px = ((e.clientX - r.left) / r.width) * W;
-      const p = pts.reduce((a, b) => (Math.abs(x(b.at) - px) < Math.abs(x(a.at) - px) ? b : a));
+      const p = spots.reduce((a, b) => (Math.abs(x(b.at) - px) < Math.abs(x(a.at) - px) ? b : a));
       const target = Math.round(((p.at - f.weekStart) / (f.resetAt - f.weekStart)) * 100);
+      const pv = prevAt(p.at);
       hair.setAttribute('x1', x(p.at)); hair.setAttribute('x2', x(p.at)); hair.setAttribute('visibility', 'visible');
-      dot.setAttribute('cx', x(p.at)); dot.setAttribute('cy', y(p.used)); dot.setAttribute('visibility', 'visible');
+      if (p.used != null) { dot.setAttribute('cx', x(p.at)); dot.setAttribute('cy', y(p.used)); }
+      dot.setAttribute('visibility', p.used != null ? 'visible' : 'hidden');
+      if (pv != null) { pdot.setAttribute('cx', x(p.at)); pdot.setAttribute('cy', y(pv)); }
+      pdot.setAttribute('visibility', pv != null ? 'visible' : 'hidden');
       tip.textContent = '';
-      const strong = el('b', '', `${p.used}%`);
-      tip.append(strong, ` 使用 ・ 目安 ${target}% ・ ${M.when(p.at, fmt12, true)}`);
+      if (p.used != null) {
+        tip.append(el('b', '', `${p.used}%`), ' 使用');
+        if (pv != null) tip.append(` ・ 先週 ${pct(pv)}`);
+        tip.append(` ・ 目安 ${target}% ・ ${M.when(p.at, fmt12, true)}`);
+      } else {
+        tip.append('先週 ', el('b', '', pct(pv)), ` ・ 目安 ${target}% ・ ${M.when(p.at - M.WEEK, fmt12, true)}`);
+      }
       tip.style.display = 'block';
       const left = (x(p.at) / W) * r.width;
       tip.style.left = `${Math.min(Math.max(0, left - tip.offsetWidth / 2), r.width - tip.offsetWidth)}px`;
@@ -471,6 +534,7 @@
     hit.addEventListener('pointerleave', () => {
       hair.setAttribute('visibility', 'hidden');
       dot.setAttribute('visibility', 'hidden');
+      pdot.setAttribute('visibility', 'hidden');
       tip.style.display = 'none';
     });
 
@@ -482,6 +546,16 @@
     details.appendChild(summary);
     const table = el('table', '');
     table.style.cssText = 'margin-top:4px;border-collapse:collapse;font-variant-numeric:tabular-nums;';
+    if (prev) {
+      const tr = el('tr', '');
+      for (const t of ['日時', '使用率', '先週の同時刻']) {
+        const th = el('th', '', t);
+        th.style.cssText = 'padding:1px 0 1px 16px;font-weight:normal;text-align:right;';
+        tr.appendChild(th);
+      }
+      tr.firstChild.style.cssText = 'padding:1px 16px 1px 0;font-weight:normal;text-align:left;';
+      table.appendChild(tr);
+    }
     pts.slice(-50).reverse().forEach((p) => {
       const tr = el('tr', '');
       const a = el('td', '', M.when(p.at, fmt12, true));
@@ -489,6 +563,12 @@
       a.style.cssText = 'padding:1px 16px 1px 0;';
       b.style.textAlign = 'right';
       tr.append(a, b);
+      if (prev) {
+        const pv = prevAt(p.at);
+        const c = el('td', '', pv != null ? pct(pv) : '—');
+        c.style.cssText = 'padding:1px 0 1px 16px;text-align:right;';
+        tr.appendChild(c);
+      }
       table.appendChild(tr);
     });
     details.appendChild(table);

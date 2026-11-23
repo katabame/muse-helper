@@ -97,7 +97,7 @@
   function record(used, at) {
     const last = history[history.length - 1];
     if (last && last.used === used && at - last.at < SAMPLE_GAP) return;
-    history = history.filter((s) => at - s.at < HISTORY_KEEP).concat({ used, at }).slice(-500);
+    history = history.filter((s) => at - s.at < HISTORY_KEEP).concat({ used, at }).slice(-3000); // 14日分(15分ごと+変化時)が収まる件数
     try { chrome.storage.local.set({ [HISTORY_KEY]: history }); } catch (e) {}
   }
 
