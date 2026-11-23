@@ -201,16 +201,28 @@ globalThis.MuseHelper = (() => {
   // キーボードショートカット(keys.js と設定画面で共有)。Mac では Option キー
   const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
   const ALT = IS_MAC ? '⌥' : 'Alt+';
+  // id: 設定に保存するときの名前、code: 既定のキー(KeyboardEvent.code)。キーは設定画面で変えられる(museShortcutKeys)
   const SHORTCUTS = [
-    { code: 'KeyI', key: 'I', title: '入力欄にフォーカス' },
-    { code: 'KeyJ', key: 'J', title: '最新のメッセージへ' },
-    { code: 'ArrowUp', key: '↑', title: '前のメッセージへ', sub: '入力欄に文章があるときは、入力欄の中の移動になります' },
-    { code: 'ArrowDown', key: '↓', title: '次のメッセージへ', sub: '入力欄に文章があるときは、入力欄の中の移動になります' },
-    { code: 'KeyS', key: 'S', title: '会話内を検索' },
-    { code: 'KeyT', key: 'T', title: '定型文を挿入' },
-    { code: 'KeyB', key: 'B', title: 'ブックマークの一覧を開く/閉じる' },
-    { code: 'Slash', key: '/', title: 'ショートカットの一覧を表示' },
+    { id: 'focus', code: 'KeyI', title: '入力欄にフォーカス' },
+    { id: 'latest', code: 'KeyJ', title: '最新のメッセージへ' },
+    { id: 'prev', code: 'ArrowUp', title: '前のメッセージへ', sub: '入力欄に文章があるときは、入力欄の中の移動になります' },
+    { id: 'next', code: 'ArrowDown', title: '次のメッセージへ', sub: '入力欄に文章があるときは、入力欄の中の移動になります' },
+    { id: 'search', code: 'KeyS', title: '会話内を検索' },
+    { id: 'snippet', code: 'KeyT', title: '定型文を挿入' },
+    { id: 'bookmarks', code: 'KeyB', title: 'ブックマークの一覧を開く/閉じる' },
+    { id: 'help', code: 'Slash', title: 'ショートカットの一覧を表示' },
   ];
+  // KeyboardEvent.code を表示用の文字に(KeyS → S、Digit1 → 1、ArrowUp → ↑)
+  function keyLabel(code) {
+    const named = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Slash: '/', Period: '.', Comma: ',',
+      Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`',
+      Enter: 'Enter', Space: 'Space', IntlRo: 'ろ', IntlYen: '¥' };
+    if (named[code]) return named[code];
+    let m = /^Key([A-Z])$/.exec(code) || /^Digit(\d)$/.exec(code) || /^(F\d{1,2})$/.exec(code);
+    return m ? m[1] : code;
+  }
+  // 今のキー割り当て { id: code }(保存された割り当てで上書き)
+  const shortcutCodes = (saved) => Object.fromEntries(SHORTCUTS.map((s) => [s.id, (saved && saved[s.id]) || s.code]));
 
   // 入力欄のカーソル位置に文字を入れる(execCommand なら元に戻す(⌘Z)が効き、input イベントで Muse 側にも伝わる)
   function insertText(t, text) {
@@ -258,6 +270,15 @@ globalThis.MuseHelper = (() => {
     REPLY_NOTIFY_KEY: 'museNotifyReply', // false なら返信の通知を出さない(既定は通知)
     REPLY_PREVIEW_KEY: 'museNotifyReplyPreview', // true なら返信の通知に本文の冒頭を出す(既定は出さない)
     SNIPPETS_KEY: 'museSnippets', // [{ id, title, text }] 定型文
+    SHORTCUT_KEYS_KEY: 'museShortcutKeys', // { [ショートカットの id]: KeyboardEvent.code } 変更したキー
+    DRAFT_HISTORY_KEY: 'museDraftHistory', // { [チャットのパス]: [{ text, at }] } 以前の下書き(新しい順、最大5件)
+    LOW_CONFIRM_KEY: 'museLowConfirm', // 残りがこの % 以下なら送信前に確認する(0 でオフ。既定 10)
+    CHAT_WIDTH_KEY: 'museChatWidth', // 'default' | 'wide' | 'full' 本文の幅
+    FONT_SCALE_KEY: 'museFontScale', // 90 | 100 | 110 | 125 本文の文字の大きさ(%)
+    COLLAPSE_KEY: 'museCollapse', // true なら長いメッセージを折りたたむ(既定はオフ)
+    BOOKMARK_SORT_KEY: 'museBookmarkSort', // 'chat'(会話ごと)| 'added'(追加した順)
+    SIDEBAR_BADGE_KEY: 'museSidebarBadge', // false ならサイドバーの会話にブックマーク数を出さない(既定は出す)
+    THREAD_NAMES_KEY: 'museThreadNames', // { [会話のパス]: サイドバーでの名前 } 開いたときに覚える(★の表示用)
     ACTIVITY_KEY: 'museActivity', // { days: { 'YYYY-MM-DD': { sent, recv, sentChars, recvChars } }, ids: [...] } 利用の記録
     API_LATEST: `https://api.github.com/repos/${REPO}/releases/latest`,
     RELEASES_URL: `https://github.com/${REPO}/releases/latest`,
@@ -282,7 +303,7 @@ globalThis.MuseHelper = (() => {
     HOUR, DAY, WEEK,
     resetDate, forecast, severity, when, projText,
     composerInput, composerLayout, charCount,
-    messages, messageText, scrollToMessage, duration, ALT, SHORTCUTS, insertText, dayKey, OWN_IN_MESSAGE,
+    messages, messageText, scrollToMessage, duration, ALT, SHORTCUTS, keyLabel, shortcutCodes, insertText, dayKey, OWN_IN_MESSAGE,
     SEVERITY_COLOR: ['#16a34a', '#d97706', '#dc2626'], // 設定画面(明暗どちらでも読める濃さ)
     fmt12: () => document.documentElement.getAttribute('data-muse-ts-format') === '12',
     signed(n, digits = 0) {

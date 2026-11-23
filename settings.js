@@ -34,7 +34,16 @@
     [MuseHelper.RESET_NOTIFY_KEY]: true,
     [MuseHelper.REPLY_NOTIFY_KEY]: true,
     [MuseHelper.REPLY_PREVIEW_KEY]: false,
+    [MuseHelper.COLLAPSE_KEY]: false,
+    [MuseHelper.SIDEBAR_BADGE_KEY]: true,
   };
+  let chatWidth = 'default'; // 本文の幅
+  let fontScale = 100; // 文字の大きさ(%)
+  let lowConfirm = 10; // 残りがこの % 以下なら送信前に確認(0 でオフ)
+  let shortcutKeys = {}; // 変更したショートカットのキー { id: code }
+  let capturing = null; // キーの変更を待っているショートカットの id
+  let shortcutMsg = '';
+  let draftHistory = {}; // 以前の下書き { [path]: [{ text, at }] }
   const PREF_DEFAULTS = { ...prefs };
   const prefValue = (k, v) => (typeof v === 'boolean' ? v : PREF_DEFAULTS[k]);
   let snippets = []; // 定型文 [{ id, title, text }]
@@ -60,8 +69,10 @@
     /* 先週の線は2番目(オレンジ)。どちらのモードも検証スクリプトで確認済み */
     .${PANE} .muse-helper-chart { --muse-helper-series: #2a78d6; --muse-helper-prev: #eb6834; --muse-helper-surface: #fcfcfb; }
     html.dark .${PANE} .muse-helper-chart { --muse-helper-series: #3987e5; --muse-helper-prev: #d95926; --muse-helper-surface: #1a1a19; }
-    .${PANE} .muse-helper-act-chart { --muse-helper-series: #2a78d6; --muse-helper-surface: #fcfcfb; }
-    html.dark .${PANE} .muse-helper-act-chart { --muse-helper-series: #3987e5; --muse-helper-surface: #1a1a19; }
+    .${PANE} .muse-helper-act-chart { --muse-helper-series: #2a78d6; --muse-helper-surface: #fcfcfb;
+      --seq-0: rgba(128,128,128,.12); --seq-1: #d4e4f7; --seq-2: #a3c6ee; --seq-3: #6aa0e2; --seq-4: #2a78d6; --seq-5: #1b4f90; }
+    html.dark .${PANE} .muse-helper-act-chart { --muse-helper-series: #3987e5; --muse-helper-surface: #1a1a19;
+      --seq-0: rgba(128,128,128,.14); --seq-1: #1e3048; --seq-2: #23497a; --seq-3: #2b66ad; --seq-4: #3987e5; --seq-5: #86b6f0; }
     /* 入力欄とボタン(定型文・バックアップ) */
     .${PANE} .muse-helper-field { box-sizing: border-box; width: 100%; padding: 6px 10px; font: inherit; color: inherit; background: transparent;
       border: 1px solid rgba(128,128,128,.4); border-radius: 8px; outline: none; }
@@ -179,11 +190,38 @@
     group.appendChild(extras);
     body.appendChild(group);
 
+    body.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', '表示'));
+    const view = el('div', 'flex flex-col gap-2');
+    view.appendChild(radioCard('width', '本文の幅', [
+      { value: 'default', title: '標準', example: 'Muse の標準の幅' },
+      { value: 'wide', title: '広い', example: '標準の約1.3倍' },
+      { value: 'full', title: '画面いっぱい', example: 'ウィンドウの幅に合わせます' },
+    ], (v) => setLayout(MuseHelper.CHAT_WIDTH_KEY, v)));
+    view.appendChild(radioCard('scale', '文字の大きさ', [
+      { value: '90', title: '小さめ(90%)', example: 'メッセージを少し小さく表示します' },
+      { value: '100', title: '標準', example: 'Muse の標準の大きさ' },
+      { value: '110', title: '大きめ(110%)', example: 'メッセージを少し大きく表示します' },
+      { value: '125', title: '特大(125%)', example: 'メッセージを大きく表示します' },
+    ], (v) => setLayout(MuseHelper.FONT_SCALE_KEY, Number(v))));
+    const viewExtras = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
+    viewExtras.appendChild(prefSwitch(MuseHelper.COLLAPSE_KEY, '長いメッセージを折りたたむ(試験的)',
+      'とても長いメッセージを途中まで表示し、時刻の横の「全文を表示」で開きます。表示が崩れる場合はオフにしてください'));
+    view.appendChild(viewExtras);
+    body.appendChild(view);
+
     body.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', '入力'));
-    body.appendChild(radioCard('sendkey', '送信キー', [
+    const input = el('div', 'flex flex-col gap-2');
+    body.appendChild(input);
+    input.appendChild(radioCard('sendkey', '送信キー', [
       { value: 'enter', title: 'Enter で送信', example: 'Muse の標準の動き(Shift+Enter で改行)' },
       { value: 'mod-enter', title: 'Ctrl/⌘+Enter で送信', example: 'Enter で改行します。長い文章を書くときの誤送信を防げます' },
     ], setSendKey));
+    input.appendChild(radioCard('lowconfirm', '残りが少ないときの送信前の確認', [
+      { value: '0', title: '確認しない', example: '' },
+      { value: '5', title: '残り 5% 以下で確認', example: '' },
+      { value: '10', title: '残り 10% 以下で確認', example: '送信の前に「残り 8% です。送信しますか？」と確認します(送ったあと30分は聞きません)' },
+      { value: '20', title: '残り 20% 以下で確認', example: '' },
+    ], (v) => setLayout(MuseHelper.LOW_CONFIRM_KEY, Number(v))));
     body.appendChild(buildSnippetsSection());
     body.appendChild(buildShortcutsSection());
     body.appendChild(buildBookmarksSection());
@@ -441,24 +479,98 @@
   }
 
   // ---------- ショートカット ----------
+  const codes = () => MuseHelper.shortcutCodes(shortcutKeys);
+  const altName = () => (MuseHelper.ALT === '⌥' ? 'Option' : 'Alt');
+  const keyText = (id) => MuseHelper.ALT + MuseHelper.keyLabel(codes()[id]);
+
   function buildShortcutsSection() {
     const wrap = el('div', 'space-y-1.5');
     wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', 'キーボードショートカット'));
-    const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
-    card.appendChild(prefSwitch(MuseHelper.SHORTCUTS_KEY, 'ショートカットを使う',
-      `${MuseHelper.ALT === '⌥' ? 'Option' : 'Alt'} キーと組み合わせて使います。会話の画面で ${MuseHelper.ALT}/ を押すと一覧が出ます`));
+    const card = el('div', 'muse-helper-shortcuts bg-fill-secondary-elevated rounded-16 p-1.5');
+    card.appendChild(prefSwitch(MuseHelper.SHORTCUTS_KEY, 'ショートカットを使う', ''));
+    card.firstChild.querySelector('.text-caption-1').classList.add('muse-helper-sc-sub');
     for (const sc of MuseHelper.SHORTCUTS) {
       card.appendChild(divider());
       const r = row();
+      r.dataset.shortcut = sc.id;
       r.appendChild(texts(sc.title, sc.sub || null));
-      const k = el('kbd', 'text-subheadline text-text-secondary ps-2 self-center', MuseHelper.ALT + sc.key);
+      const k = el('kbd', 'muse-helper-sc-key text-subheadline text-text-secondary ps-2 self-center');
       k.style.fontFamily = 'ui-monospace, monospace';
-      r.appendChild(k);
+      const change = el('button', 'muse-helper-btn ms-2 self-center', '変更');
+      change.type = 'button';
+      change.addEventListener('click', () => {
+        capturing = capturing === sc.id ? null : sc.id;
+        shortcutMsg = capturing ? `${altName()} キーを押しながら、割り当てたいキーを押してください(Esc でやめる)` : '';
+        document.querySelectorAll('.' + PANE).forEach(syncShortcuts);
+      });
+      r.append(k, change);
       card.appendChild(r);
     }
+    card.appendChild(divider());
+    const foot = row('muse-helper-sc-foot');
+    foot.appendChild(texts('', ''));
+    foot.querySelector('.text-subheadline').remove();
+    const reset = el('button', 'muse-helper-btn ms-2 self-center', '既定に戻す');
+    reset.type = 'button';
+    reset.addEventListener('click', () => saveShortcutKeys({}, '既定のキーに戻しました'));
+    foot.appendChild(reset);
+    card.appendChild(foot);
     wrap.appendChild(card);
     return wrap;
   }
+
+  function saveShortcutKeys(next, msg) {
+    shortcutKeys = next;
+    capturing = null;
+    shortcutMsg = msg || '';
+    try { chrome.storage.local.set({ [MuseHelper.SHORTCUT_KEYS_KEY]: shortcutKeys }); } catch (e) {}
+    document.querySelectorAll('.' + PANE).forEach(syncPane);
+  }
+
+  function syncShortcuts(pane) {
+    const card = pane.querySelector('.muse-helper-shortcuts');
+    if (!card) return;
+    card.querySelector('.muse-helper-sc-sub').textContent =
+      `${altName()} キーと組み合わせて使います。会話の画面で ${keyText('help')} を押すと一覧が出ます`;
+    card.querySelectorAll('[data-shortcut]').forEach((r) => {
+      const id = r.dataset.shortcut;
+      r.querySelector('.muse-helper-sc-key').textContent = capturing === id ? 'キーを押してください…' : keyText(id);
+      r.querySelector('.muse-helper-btn').textContent = capturing === id ? 'やめる' : '変更';
+    });
+    const changed = Object.keys(shortcutKeys).length > 0;
+    card.querySelector('.muse-helper-sc-foot .text-caption-1').textContent =
+      shortcutMsg || (changed ? '一部のキーを変更しています' : '「変更」を押すと、キーを割り当て直せます');
+  }
+
+  // キーの割り当ての受け付け(変更を押したあとの次のキー)
+  document.addEventListener('keydown', (e) => {
+    if (!capturing) return;
+    if (['Alt', 'Shift', 'Control', 'Meta'].includes(e.key) || e.isComposing) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (e.key === 'Escape') {
+      capturing = null;
+      shortcutMsg = '';
+      document.querySelectorAll('.' + PANE).forEach(syncShortcuts);
+      return;
+    }
+    if (!e.altKey || e.ctrlKey || e.metaKey) {
+      shortcutMsg = `${altName()} キーを押しながら押してください(Ctrl・⌘ は使えません)`;
+      document.querySelectorAll('.' + PANE).forEach(syncShortcuts);
+      return;
+    }
+    const cur = codes();
+    const other = MuseHelper.SHORTCUTS.find((sc) => sc.id !== capturing && cur[sc.id] === e.code);
+    if (other) {
+      shortcutMsg = `${MuseHelper.ALT}${MuseHelper.keyLabel(e.code)} は「${other.title}」で使っています`;
+      document.querySelectorAll('.' + PANE).forEach(syncShortcuts);
+      return;
+    }
+    const def = MuseHelper.SHORTCUTS.find((sc) => sc.id === capturing);
+    const next = { ...shortcutKeys };
+    if (def && def.code === e.code) delete next[capturing]; else next[capturing] = e.code;
+    saveShortcutKeys(next, `「${def ? def.title : ''}」を ${MuseHelper.ALT}${MuseHelper.keyLabel(e.code)} にしました`);
+  }, true);
 
   // ---------- ブックマーク ----------
   // 設定ダイアログを閉じる(Muse の「閉じる」ボタン。なければ Esc)
@@ -478,10 +590,13 @@
     countRow.appendChild(el('div', 'muse-helper-bm-num flex items-center self-center ps-2 text-subheadline text-text-primary'));
     card.appendChild(countRow);
     card.appendChild(divider());
-    card.appendChild(actionRow('muse-helper-bm-open', 'button', '一覧を開く', `設定を閉じて一覧を表示します(${MuseHelper.ALT}B でも開けます)`, () => {
+    card.appendChild(actionRow('muse-helper-bm-open', 'button', '一覧を開く', `設定を閉じて一覧を表示します(${keyText('bookmarks')} でも開けます)`, () => {
       closeSettings();
       setTimeout(() => MuseHelper.bookmarks && MuseHelper.bookmarks.open(), 150);
     }));
+    card.appendChild(divider());
+    card.appendChild(prefSwitch(MuseHelper.SIDEBAR_BADGE_KEY, 'サイドバーにブックマーク数を表示',
+      'ブックマークがある会話の名前の横に「★2」のように件数を出します'));
     wrap.appendChild(card);
     return wrap;
   }
@@ -544,6 +659,13 @@
     const box = el('div', 'muse-helper-act-chart px-3 pt-2 pb-1');
     card.appendChild(box);
     renderActivityChart(box, list, fmt12, wasOpen);
+    if (list.some((p) => p.hours)) {
+      card.appendChild(divider());
+      const hb = el('div', 'muse-helper-act-chart px-3 pt-2 pb-1');
+      card.appendChild(hb);
+      renderHeatmap(hb, list, !!card.dataset.heatOpen);
+      hb.querySelector('details').addEventListener('toggle', (e) => { card.dataset.heatOpen = e.target.open ? '1' : ''; });
+    }
     const first = keys[0].split('-');
     const foot = row();
     foot.appendChild(texts('', `${Number(first[1])}/${Number(first[2])} から記録しています。muse.ai を開いているタブで、新しく送った・届いたメッセージを数えます`));
@@ -641,6 +763,98 @@
     box.appendChild(details);
   }
 
+  // 曜日と時間帯ごとの送信数(直近28日の合計)。1つの色の濃さで表す(数が多いほど濃い)
+  function renderHeatmap(box, list, wasOpen) {
+    const WD = ['月', '火', '水', '木', '金', '土', '日'];
+    const grid = WD.map(() => new Array(24).fill(0));
+    for (const p of list) {
+      if (!p.hours) continue;
+      const wd = (p.d.getDay() + 6) % 7; // 月曜始まり
+      for (const [h, n] of Object.entries(p.hours)) grid[wd][Number(h)] += n;
+    }
+    const max = Math.max(...grid.flat());
+    const level = (n) => (!n ? 0 : Math.min(5, Math.ceil((n / max) * 5)));
+    box.appendChild(el('div', 'text-caption-1 text-text-secondary', 'よく送る曜日と時間帯(直近28日の送信数)'));
+
+    const W = 560, L = 22, T = 4, B = 18, cw = (W - L) / 24, ch = 14, H = T + ch * 7 + B;
+    const wrap = el('div', '');
+    wrap.style.cssText = 'position:relative;margin-top:4px;';
+    const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img', 'aria-label': '曜日と時間帯ごとの送信数' });
+    svg.style.cssText = 'display:block;overflow:visible;font:10px system-ui,sans-serif;';
+    wrap.appendChild(svg);
+    box.appendChild(wrap);
+    WD.forEach((w, r) => {
+      const t = s('text', { x: L - 6, y: T + r * ch + ch / 2 + 3.5, 'text-anchor': 'end', fill: 'currentColor', 'fill-opacity': '0.6' }, svg);
+      t.textContent = w;
+    });
+    for (const h of [0, 6, 12, 18]) {
+      const t = s('text', { x: L + h * cw, y: H - 4, fill: 'currentColor', 'fill-opacity': '0.6' }, svg);
+      t.textContent = `${h}時`;
+    }
+    const cells = [];
+    grid.forEach((rowv, r) => rowv.forEach((n, h) => {
+      // 2px の間隔をあけたマス
+      cells.push(s('rect', { x: L + h * cw + 1, y: T + r * ch + 1, width: cw - 2, height: ch - 2, rx: 2, fill: `var(--seq-${level(n)})` }, svg));
+    }));
+    const tip = el('div', 'text-caption-1 text-text-primary');
+    tip.style.cssText = 'position:absolute;top:0;pointer-events:none;display:none;white-space:nowrap;padding:4px 8px;border-radius:8px;' +
+      'background:var(--muse-helper-surface);box-shadow:0 1px 6px rgba(0,0,0,.25);transform:translateY(-100%);';
+    wrap.appendChild(tip);
+    const outline = s('rect', { width: cw, height: ch, fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', rx: 3, visibility: 'hidden' }, svg);
+    const hit = s('rect', { x: L, y: T, width: W - L, height: ch * 7, fill: 'transparent' }, svg);
+    hit.addEventListener('pointermove', (e) => {
+      const r = svg.getBoundingClientRect();
+      const px = ((e.clientX - r.left) / r.width) * W, py = ((e.clientY - r.top) / r.height) * H;
+      const h = Math.max(0, Math.min(23, Math.floor((px - L) / cw))), row = Math.max(0, Math.min(6, Math.floor((py - T) / ch)));
+      outline.setAttribute('x', L + h * cw);
+      outline.setAttribute('y', T + row * ch);
+      outline.setAttribute('visibility', 'visible');
+      tip.textContent = '';
+      tip.append(`${WD[row]}曜 ${h}時台 `, el('b', '', `${grid[row][h]}件`));
+      tip.style.display = 'block';
+      const left = ((L + h * cw + cw / 2) / W) * r.width;
+      tip.style.left = `${Math.min(Math.max(0, left - tip.offsetWidth / 2), r.width - tip.offsetWidth)}px`;
+      tip.style.top = `${((T + row * ch) / H) * r.height - 4}px`;
+    });
+    hit.addEventListener('pointerleave', () => { outline.setAttribute('visibility', 'hidden'); tip.style.display = 'none'; });
+
+    // 凡例(少ない → 多い)
+    const legend = el('div', 'text-caption-1 text-text-secondary');
+    legend.style.cssText = 'display:flex;align-items:center;gap:3px;justify-content:flex-end;margin-top:2px;';
+    legend.append('少ない ');
+    for (let i = 0; i <= 5; i++) {
+      const sw = el('span', '');
+      sw.style.cssText = `display:inline-block;width:12px;height:10px;border-radius:2px;background:var(--seq-${i});`;
+      legend.appendChild(sw);
+    }
+    legend.append(' 多い');
+    box.appendChild(legend);
+
+    // 表で見る: 送信の多い時間帯の上位
+    const details = el('details', 'text-caption-1 text-text-secondary');
+    details.style.cssText = 'margin-top:4px;';
+    const summary = el('summary', '', '表で見る(送信の多い時間帯)');
+    summary.style.cursor = 'pointer';
+    details.appendChild(summary);
+    const top = [];
+    grid.forEach((rowv, r) => rowv.forEach((n, h) => { if (n) top.push({ r, h, n }); }));
+    top.sort((a, b) => b.n - a.n);
+    const table = el('table', '');
+    table.style.cssText = 'margin-top:4px;border-collapse:collapse;font-variant-numeric:tabular-nums;';
+    top.slice(0, 15).forEach((c) => {
+      const tr = el('tr', '');
+      const a = el('td', '', `${WD[c.r]}曜 ${c.h}時台`);
+      const b = el('td', 'text-text-primary', `${c.n}件`);
+      a.style.cssText = 'padding:1px 16px 1px 0;';
+      b.style.textAlign = 'right';
+      tr.append(a, b);
+      table.appendChild(tr);
+    });
+    details.appendChild(table);
+    details.open = wasOpen;
+    box.appendChild(details);
+  }
+
   // ---------- 定型文 ----------
   function buildSnippetsSection() {
     const wrap = el('div', 'space-y-1.5');
@@ -664,7 +878,7 @@
     title.setAttribute('aria-label', '定型文の名前');
     title.value = sn ? sn.title : '';
     const text = el('textarea', 'muse-helper-field');
-    text.placeholder = '挿入する文章';
+    text.placeholder = '挿入する文章(例: 次の文章を要約してください。\n\n{選択中の文字}{カーソル})';
     text.setAttribute('aria-label', '挿入する文章');
     text.value = sn ? sn.text : '';
     const btns = el('div', 'flex gap-2 justify-end');
@@ -680,7 +894,9 @@
       else saveSnippets([...snippets, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...v }]);
     });
     btns.append(cancel, ok);
-    f.append(title, text, btns);
+    const hint = el('div', 'text-caption-1 text-text-secondary',
+      '{日付} {時刻} {曜日} {選択中の文字} {クリップボード} は挿入するときに中身に置き換わります。{カーソル} の位置にカーソルを置きます');
+    f.append(title, text, hint, btns);
     setTimeout(() => (sn ? text : title).focus());
     return f;
   }
@@ -721,7 +937,7 @@
     if (snippetEditing === 'new') card.appendChild(snippetForm(null));
     else {
       card.appendChild(actionRow('muse-helper-snippet-add', 'button', '定型文を追加',
-        `会話の画面で ${MuseHelper.ALT}T を押すと一覧が出て、選ぶと入力欄に挿入します`, () => {
+        `会話の画面で ${keyText('snippet')} を押すと一覧が出て、選ぶと入力欄に挿入します`, () => {
           snippetEditing = 'new';
           document.querySelectorAll('.' + PANE).forEach(syncSnippets);
         }));
@@ -1129,7 +1345,7 @@
     card.appendChild(countRow);
     card.appendChild(divider());
     card.appendChild(actionRow('muse-helper-drafts-clear', 'button', 'すべての下書きを削除', '', () => {
-      const n = Object.keys(drafts).length;
+      const n = Object.keys(drafts).length + historyCount();
       if (!n) return;
       if (Date.now() > confirmClearUntil) {
         // 誤操作防止: 1回目は確認表示だけ(3秒以内にもう一度押すと削除)
@@ -1140,26 +1356,31 @@
       }
       confirmClearUntil = 0;
       drafts = {};
-      try { chrome.storage.local.set({ [MuseHelper.DRAFTS_KEY]: {} }); } catch (e) {}
+      draftHistory = {};
+      try { chrome.storage.local.set({ [MuseHelper.DRAFTS_KEY]: {}, [MuseHelper.DRAFT_HISTORY_KEY]: {} }); } catch (e) {}
       document.querySelectorAll('.' + PANE).forEach(syncDrafts);
     }));
     wrap.appendChild(card);
     return wrap;
   }
 
+  const historyCount = () => Object.values(draftHistory).reduce((a, l) => a + (Array.isArray(l) ? l.length : 0), 0);
+
   function syncDrafts(pane) {
     const sw = pane.querySelector('.muse-helper-drafts-toggle');
     if (!sw) return;
     sw.setAttribute('aria-checked', String(draftsEnabled));
-    const n = Object.keys(drafts).length;
-    pane.querySelector('.muse-helper-drafts-num').textContent = `${n}件`;
+    const d = Object.keys(drafts).length;
+    const h = historyCount();
+    const n = d + h;
+    pane.querySelector('.muse-helper-drafts-num').textContent = h ? `${d}件(以前の下書き ${h}件)` : `${d}件`;
     const clear = pane.querySelector('.muse-helper-drafts-clear');
     const title = clear.querySelector('.text-subheadline');
     const sub = clear.querySelector('.text-caption-1');
     const confirming = Date.now() <= confirmClearUntil;
     title.textContent = confirming ? 'もう一度押すと削除します' : 'すべての下書きを削除';
     title.style.color = n ? MuseHelper.SEVERITY_COLOR[2] : '';
-    sub.textContent = n ? (confirming ? '3秒以内に押してください' : `${n}件の下書きを削除します`) : '削除する下書きはありません';
+    sub.textContent = n ? (confirming ? '3秒以内に押してください' : `${n}件の下書きを削除します${h ? '(以前の下書きを含む)' : ''}`) : '削除する下書きはありません';
     clear.style.opacity = n ? '' : '.5';
     clear.style.cursor = n ? 'pointer' : 'default';
   }
@@ -1399,11 +1620,21 @@
     syncStats(pane);
     syncSnippets(pane);
     syncActivity(pane);
+    syncShortcuts(pane);
     syncBackup(pane);
     pane.querySelectorAll('[role="radio"]').forEach((r) => {
-      const cur = { mode: tsMode, format: tsFormat, sendkey: sendKey }[r.dataset.group];
+      const cur = { mode: tsMode, format: tsFormat, sendkey: sendKey, width: chatWidth, scale: String(fontScale), lowconfirm: String(lowConfirm) }[r.dataset.group];
       r.setAttribute('aria-checked', String(r.dataset.value === cur));
     });
+  }
+
+  // 表示・入力の値の設定(ラジオボタン)
+  function setLayout(key, v) {
+    if (key === MuseHelper.CHAT_WIDTH_KEY) chatWidth = v;
+    if (key === MuseHelper.FONT_SCALE_KEY) fontScale = v;
+    if (key === MuseHelper.LOW_CONFIRM_KEY) lowConfirm = v;
+    document.querySelectorAll('.' + PANE).forEach(syncPane);
+    try { chrome.storage.local.set({ [key]: v }); } catch (e) {}
   }
 
   function setFormat(v) {
@@ -1464,6 +1695,16 @@
   });
   try { window.postMessage({ source: 'muse-helper', type: 'usage-status-request' }, location.origin); } catch (e) {}
 
+  // 表示・入力・ショートカット・以前の下書きの値を読み込む(partial: 変わったキーだけ)
+  function applyLayoutValues(v, partial) {
+    const has = (k) => !partial || k in v;
+    if (has(MuseHelper.CHAT_WIDTH_KEY)) chatWidth = ['wide', 'full'].includes(v[MuseHelper.CHAT_WIDTH_KEY]) ? v[MuseHelper.CHAT_WIDTH_KEY] : 'default';
+    if (has(MuseHelper.FONT_SCALE_KEY)) fontScale = [90, 110, 125].includes(v[MuseHelper.FONT_SCALE_KEY]) ? v[MuseHelper.FONT_SCALE_KEY] : 100;
+    if (has(MuseHelper.LOW_CONFIRM_KEY)) lowConfirm = [0, 5, 20].includes(v[MuseHelper.LOW_CONFIRM_KEY]) ? v[MuseHelper.LOW_CONFIRM_KEY] : 10;
+    if (has(MuseHelper.SHORTCUT_KEYS_KEY)) shortcutKeys = v[MuseHelper.SHORTCUT_KEYS_KEY] || {};
+    if (has(MuseHelper.DRAFT_HISTORY_KEY)) draftHistory = v[MuseHelper.DRAFT_HISTORY_KEY] || {};
+  }
+
   // ---------- 起動 ----------
   let queued = false;
   new MutationObserver(() => {
@@ -1477,7 +1718,9 @@
 
   try {
     chrome.storage.local.get([TS_FMT_KEY, TS_MODE_KEY, MuseHelper.UPDATE_KEY, MuseHelper.USAGE_KEY, MuseHelper.HISTORY_KEY, MuseHelper.PACE_BADGE_KEY,
-      MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY, MuseHelper.DEV_MODE_KEY, MuseHelper.SEND_KEY_KEY, MuseHelper.BOOKMARKS_KEY, MuseHelper.SNIPPETS_KEY, MuseHelper.ACTIVITY_KEY, ...Object.keys(prefs)], (v) => {
+      MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY, MuseHelper.DEV_MODE_KEY, MuseHelper.SEND_KEY_KEY, MuseHelper.BOOKMARKS_KEY, MuseHelper.SNIPPETS_KEY, MuseHelper.ACTIVITY_KEY, MuseHelper.CHAT_WIDTH_KEY, MuseHelper.FONT_SCALE_KEY,
+      MuseHelper.LOW_CONFIRM_KEY, MuseHelper.SHORTCUT_KEYS_KEY, MuseHelper.DRAFT_HISTORY_KEY, ...Object.keys(prefs)], (v) => {
+      applyLayoutValues(v || {});
       bookmarkCount = Object.keys((v && v[MuseHelper.BOOKMARKS_KEY]) || {}).length;
       for (const k of Object.keys(prefs)) prefs[k] = prefValue(k, v && v[k]);
       snippets = (v && Array.isArray(v[MuseHelper.SNIPPETS_KEY]) && v[MuseHelper.SNIPPETS_KEY]) || [];
@@ -1499,6 +1742,13 @@
       if (area === 'local' && (changes[TS_FMT_KEY] || changes[TS_MODE_KEY])) {
         if (changes[TS_FMT_KEY]) tsFormat = changes[TS_FMT_KEY].newValue === '12' ? '12' : '24';
         if (changes[TS_MODE_KEY]) tsMode = normMode(changes[TS_MODE_KEY].newValue);
+        document.querySelectorAll('.' + PANE).forEach(syncPane);
+      }
+      const lk = [MuseHelper.CHAT_WIDTH_KEY, MuseHelper.FONT_SCALE_KEY, MuseHelper.LOW_CONFIRM_KEY, MuseHelper.SHORTCUT_KEYS_KEY, MuseHelper.DRAFT_HISTORY_KEY];
+      if (area === 'local' && lk.some((k) => changes[k])) {
+        const v = {};
+        for (const k of lk) if (changes[k]) v[k] = changes[k].newValue;
+        applyLayoutValues(v, true);
         document.querySelectorAll('.' + PANE).forEach(syncPane);
       }
       if (area === 'local' && changes[MuseHelper.SNIPPETS_KEY]) {

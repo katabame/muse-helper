@@ -175,6 +175,7 @@
   function reveal() {
     const h = hits[cur];
     if (!h) return;
+    if (M.collapse) M.collapse.expand(h.el); // 折りたたまれたメッセージなら開く
     const host = h.range.startContainer.parentElement;
     if (host) host.scrollIntoView({ block: 'center', behavior: 'smooth' });
     if (!canHighlight) M.scrollToMessage(h.el, 'center');

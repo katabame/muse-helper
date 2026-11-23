@@ -17,12 +17,12 @@
   "content_scripts": [
     {
       "matches": ["https://muse.ai/*"],
-      "js": ["common.js", "content.js", "settings.js", "counter.js", "drafts.js", "sendkey.js", "bookmarks.js", "snippets.js", "search.js", "activity.js", "keys.js"],
+      "js": ["common.js", "content.js", "settings.js", "counter.js", "drafts.js", "sendkey.js", "bookmarks.js", "snippets.js", "search.js", "activity.js", "guard.js", "layout.js", "keys.js"],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://muse.ai/*"],
-      "js": ["timestamps.js", "usage-main.js", "devtools-main.js"],
+      "js": ["timestamps.js", "usage-main.js", "devtools-main.js", "nav-main.js"],
       "run_at": "document_idle",
       "world": "MAIN"
     }

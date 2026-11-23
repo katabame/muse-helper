@@ -1,6 +1,7 @@
 // 定型文(isolated world)。
 // - 登録・編集は設定画面の「Muse Helper」→「定型文」(settings.js)
 // - Alt+T で入力欄の上に一覧を出し、選ぶとカーソル位置に挿入する
+// - 文中の {日付} {時刻} {曜日} {選択中の文字} {クリップボード} は挿入時に中身に置き換え、{カーソル} の位置にカーソルを置く
 (() => {
   'use strict';
   const M = MuseHelper;
@@ -139,13 +140,47 @@
     if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
   }
 
-  function insert(s) {
+  // 差し込み項目を置き換える。戻り値 { text, cursor(なければ -1), note }
+  const WD = ['日', '月', '火', '水', '木', '金', '土'];
+  const pad = (n) => String(n).padStart(2, '0');
+  async function expand(src, selected) {
+    const d = new Date();
+    const h = d.getHours();
+    const clock = M.fmt12() ? `${h % 12 || 12}:${pad(d.getMinutes())} ${h < 12 ? 'am' : 'pm'}` : `${pad(h)}:${pad(d.getMinutes())}`;
+    const vars = { 日付: `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`, 時刻: clock, 曜日: WD[d.getDay()], 選択中の文字: selected, クリップボード: '' };
+    let note = '';
+    if (src.includes('{クリップボード}')) {
+      try { vars.クリップボード = await navigator.clipboard.readText(); } catch (e) { note = 'クリップボードを読めませんでした(ブラウザの許可が必要です)'; }
+    }
+    let text = src.replace(/\{(日付|時刻|曜日|選択中の文字|クリップボード)\}/g, (_, k) => vars[k]);
+    const cursor = text.indexOf('{カーソル}');
+    text = text.split('{カーソル}').join('');
+    return { text, cursor, note };
+  }
+
+  async function insert(s) {
     const tg = target;
     close();
     if (!tg || !tg.t.isConnected) return;
+    const selected = tg.t.value.slice(tg.start, tg.end);
+    const { text, cursor, note } = await expand(s.text, selected);
     tg.t.focus();
     tg.t.setSelectionRange(tg.start, tg.end);
-    M.insertText(tg.t, s.text);
+    M.insertText(tg.t, text);
+    if (cursor >= 0) tg.t.setSelectionRange(tg.start + cursor, tg.start + cursor);
+    if (note) toast(note);
+  }
+
+  function toast(text) {
+    const t = M.composerInput();
+    if (!t) return;
+    const r = t.getBoundingClientRect();
+    const n = document.createElement('div');
+    n.textContent = text;
+    n.style.cssText = `position:fixed;left:${Math.max(16, r.left)}px;bottom:${innerHeight - r.top + 8}px;z-index:2147483000;padding:6px 10px;` +
+      'border-radius:8px;font:12px/1.4 system-ui,sans-serif;color:#fff;background:rgba(30,30,30,.92);pointer-events:none;';
+    document.body.appendChild(n);
+    setTimeout(() => n.remove(), 4000);
   }
 
   M.snippets = { open, close };

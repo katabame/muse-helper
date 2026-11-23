@@ -14,6 +14,10 @@
 
   let marks = {}; // { [メッセージID]: { path, title, text, at, user, savedAt, memo } }
   let editing = null; // メモを編集中のブックマーク ID
+  let query = ''; // 一覧の絞り込み
+  let sort = 'chat'; // 'chat'(会話ごと)| 'added'(追加した順)
+  let sidebarBadge = true; // サイドバーの会話にブックマーク数を出す
+  let names = {}; // { [会話のパス]: サイドバーでの名前 }
   let loaded = false;
   let note = ''; // パネルに出す一時的なお知らせ
 
@@ -40,6 +44,14 @@
     #${PANEL} .bm-close { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; opacity: .6; }
     #${PANEL} .bm-close:hover { opacity: 1; background: rgba(128,128,128,.15); }
     #${PANEL} .bm-body { overflow-y: auto; padding: 0 6px 8px; }
+    #${PANEL} .bm-tools { display: flex; gap: 6px; padding: 0 10px 8px 14px; }
+    #${PANEL} .bm-q { all: unset; box-sizing: border-box; flex: 1; min-width: 0; padding: 4px 8px; font-size: 12px;
+      border: 1px solid rgba(128,128,128,.4); border-radius: 6px; }
+    #${PANEL} .bm-q:focus { border-color: #2a78d6; }
+    #${PANEL} .bm-sort { font: 12px system-ui, sans-serif; color: inherit; background: transparent; border: 1px solid rgba(128,128,128,.4); border-radius: 6px; padding: 2px 4px; }
+    html.dark #${PANEL} .bm-sort option { background: #262624; }
+    .muse-bm-count { flex: none; margin-left: auto; padding-left: 6px; font: 11px/1 system-ui, sans-serif; color: #c98500; pointer-events: none; }
+    .muse-bm-count::before { content: "★" attr(data-count); }
     #${PANEL} .bm-note { margin: 0 8px 8px; padding: 6px 8px; border-radius: 8px; font-size: 12px; background: rgba(217,119,6,.14); }
     #${PANEL} .bm-empty { padding: 4px 8px 8px; font-size: 12px; opacity: .65; }
     #${PANEL} .bm-group { margin: 8px 8px 2px; font-size: 11px; opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -133,6 +145,7 @@
   // ボタンには文字を入れない(timestamps.js はラベルの textContent で描き直しの要否を判断するため)
   function ensure() {
     if (!loaded) return;
+    badges();
     for (const m of M.messages()) {
       const label = m.el.querySelector(':scope > .muse-ts-label');
       if (!label) continue;
@@ -160,6 +173,72 @@
     }
   }
 
+  // ---------- サイドバーの会話のブックマーク数 ----------
+  // サイドバーの会話の行(data-testid="hatch-thread-row")はリンクではなく、会話の ID も持っていない。
+  // そこで、開いている会話の行(aria-current="page")の名前を、今のパスと組にして覚えておき(museThreadNames)、
+  // 名前で行を見分けて「★2」を出す。文字は CSS で出す(行の textContent は変えない)
+  const ROW = '[data-testid="hatch-thread-row"]';
+  const rowName = (r) => r.textContent.replace(/\s+/g, ' ').trim();
+
+  // 画面の切り替えの途中は、パスと「開いている行」が一瞬食い違うことがあるので、
+  // 表示中の会話(data-hatch-route-key="thread:<ID>")がパスと一致し、同じ組を1秒以上続けて見たときだけ覚える
+  let seenPair = null; // { path, name, at }
+  function learn() {
+    const cur = document.querySelector(`${ROW}[aria-current="page"]`);
+    const name = cur && rowName(cur);
+    const path = location.pathname;
+    const id = path.split('/').pop();
+    const pane = document.querySelector('[data-hatch-route-key^="thread:"]');
+    if (!name || !id || (pane && pane.getAttribute('data-hatch-route-key') !== `thread:${id}`)) { seenPair = null; return; }
+    if (names[path] === name) return;
+    if (!seenPair || seenPair.path !== path || seenPair.name !== name) { seenPair = { path, name, at: Date.now() }; return; }
+    if (Date.now() - seenPair.at < 1000) return;
+    names = { ...names, [path]: name };
+    try { chrome.storage.local.set({ [M.THREAD_NAMES_KEY]: names }); } catch (e) {}
+  }
+  setInterval(() => { if (loaded && M.alive()) badges(); }, 2000);
+
+  function setBadge(host, n, before) {
+    let badge = host.querySelector(':scope > .muse-bm-count');
+    if (!n) { if (badge) badge.remove(); return; }
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'muse-bm-count';
+      if (before && before.parentElement === host) host.insertBefore(badge, before); else host.appendChild(badge);
+    }
+    if (badge.dataset.count !== String(n)) {
+      badge.dataset.count = String(n);
+      badge.title = `ブックマーク ${n}件`;
+    }
+  }
+
+  function badges() {
+    learn();
+    const counts = {};
+    if (sidebarBadge) for (const b of Object.values(marks)) counts[b.path] = (counts[b.path] || 0) + 1;
+    // 名前 → パス(覚えた名前と、ブックマークを保存したときのタブのタイトル)
+    const byName = {};
+    const add = (name, path) => { if (name) (byName[name] = byName[name] || new Set()).add(path); };
+    for (const [path, name] of Object.entries(names)) add(name, path);
+    for (const b of Object.values(marks)) if (!names[b.path]) add(b.title, b.path);
+    for (const r of document.querySelectorAll(ROW)) {
+      let n = 0;
+      if (sidebarBadge) {
+        // 開いている会話の行は今のパスで確実に分かる。ほかは名前で(同じ名前の会話が複数あるときは出さない)
+        const paths = r.getAttribute('aria-current') === 'page' ? [location.pathname] : [...(byName[rowName(r)] || [])];
+        if (paths.length === 1) n = counts[paths[0]] || 0;
+      }
+      setBadge(r, n, r.querySelector(':scope > button[data-slot="dropdown-menu-trigger"]'));
+    }
+    // リンク(a 要素)で作られた会話の一覧にも対応しておく
+    for (const a of document.querySelectorAll('a[href]')) {
+      if (a.closest(`[role="dialog"], [data-message-id], #${PANEL}`)) continue;
+      let path = '';
+      try { const u = new URL(a.href, location.href); if (u.origin === location.origin) path = u.pathname; } catch (e) {}
+      setBadge(a, path && path !== '/' ? counts[path] || 0 : 0);
+    }
+  }
+
   // ---------- 一覧のパネル ----------
   const panel = () => document.getElementById(PANEL);
 
@@ -174,11 +253,32 @@
     const close = el('button', 'bm-close');
     close.type = 'button';
     close.setAttribute('aria-label', '閉じる');
-    close.title = `閉じる(Esc / ${M.ALT}B)`;
+    close.title = '閉じる(Esc)';
     close.appendChild(cross());
     close.addEventListener('click', hide);
     head.append(title, close);
-    p.append(head, el('div', 'bm-body'));
+    const tools = el('div', 'bm-tools');
+    const q = el('input', 'bm-q');
+    q.type = 'search';
+    q.placeholder = '本文・メモ・会話名で絞り込み';
+    q.setAttribute('aria-label', 'ブックマークを絞り込む');
+    q.value = query;
+    q.addEventListener('input', () => { query = q.value; render(); });
+    const so = el('select', 'bm-sort');
+    so.setAttribute('aria-label', '並び順');
+    for (const [v, t] of [['chat', '会話ごと'], ['added', '追加した順']]) {
+      const o = el('option', '', t);
+      o.value = v;
+      so.appendChild(o);
+    }
+    so.value = sort;
+    so.addEventListener('change', () => {
+      sort = so.value;
+      try { chrome.storage.local.set({ [M.BOOKMARK_SORT_KEY]: sort }); } catch (e) {}
+      render();
+    });
+    tools.append(q, so);
+    p.append(head, tools, el('div', 'bm-body'));
     document.body.appendChild(p);
     render();
     close.focus();
@@ -203,12 +303,24 @@
       body.appendChild(el('div', 'bm-empty', 'メッセージにマウスを乗せ、時刻の横の ☆ を押すと追加できます。'));
       return;
     }
-    // 会話ごとにまとめる(今の会話を先頭に、ほかは新しく追加した順)
+    const chatName = (b) => (b.path === location.pathname ? 'この会話' : b.title || '別の会話');
+    const q = query.trim().toLowerCase();
+    const shown = q ? list.filter((b) => `${b.text}\n${b.memo || ''}\n${b.title || ''}`.toLowerCase().includes(q)) : list;
+    if (!shown.length) {
+      body.appendChild(el('div', 'bm-empty', '一致するブックマークはありません。'));
+      return;
+    }
+    // 会話ごと: 今の会話を先頭に、ほかは新しく追加した順。会話の中は発言の順
+    // 追加した順: 新しく追加したものから、会話の名前を添えて
     const groups = new Map();
-    list.sort((a, b) => (a.at || a.savedAt) - (b.at || b.savedAt));
-    for (const b of list) {
-      if (!groups.has(b.path)) groups.set(b.path, []);
-      groups.get(b.path).push(b);
+    if (sort === 'added') {
+      groups.set('', shown.sort((a, b) => b.savedAt - a.savedAt));
+    } else {
+      shown.sort((a, b) => (a.at || a.savedAt) - (b.at || b.savedAt));
+      for (const b of shown) {
+        if (!groups.has(b.path)) groups.set(b.path, []);
+        groups.get(b.path).push(b);
+      }
     }
     const order = [...groups.keys()].sort((a, b) => {
       if (a === location.pathname) return -1;
@@ -218,14 +330,13 @@
     const fmt12 = M.fmt12();
     for (const path of order) {
       const items = groups.get(path);
-      const name = path === location.pathname ? 'この会話' : (items.find((x) => x.title) || {}).title || '別の会話';
-      body.appendChild(el('div', 'bm-group', name));
+      if (sort !== 'added') body.appendChild(el('div', 'bm-group', chatName(items[0])));
       for (const b of items) {
         const row = el('div', 'bm-item');
         const go = el('button', 'bm-go');
         go.type = 'button';
         go.append(el('div', 'bm-text', b.text || '(本文なし)'),
-          el('div', 'bm-meta', `${b.at ? M.when(b.at, fmt12, true) : '時刻不明'} ・ ${b.user ? '自分' : '相手'}`));
+          el('div', 'bm-meta', `${sort === 'added' ? `${chatName(b)} ・ ` : ''}${b.at ? M.when(b.at, fmt12, true) : '時刻不明'} ・ ${b.user ? '自分' : '相手'}`));
         if (b.memo && editing !== b.id) go.appendChild(el('div', 'bm-memo', b.memo));
         go.addEventListener('click', () => jump(b.id));
         if (editing === b.id) {
@@ -302,15 +413,40 @@
       }
       return;
     }
-    try { sessionStorage.setItem(JUMP, id); } catch (e) {}
-    location.assign(b.path);
+    // 別の会話: Muse(Next.js)の画面の切り替えで移動し(再読み込みしない)、メッセージが出るのを待つ。
+    // 切り替えが使えなければ、ページを読み込み直して移動する
+    hide();
+    navigate(b.path).then((ok) => {
+      if (ok) return waitAndScroll(id);
+      try { sessionStorage.setItem(JUMP, id); } catch (e) {}
+      location.assign(b.path);
+    });
   }
 
-  // 別の会話から移動してきたとき: メッセージが表示されるまで待って移動する(最大15秒)
+  // nav-main.js(MAIN world)に画面の切り替えを頼む。1秒以内に返事がなければ失敗とみなす
+  function navigate(path) {
+    return new Promise((resolve) => {
+      const reqId = Math.random().toString(36).slice(2);
+      const done = (ok) => { window.removeEventListener('message', onMsg); clearTimeout(timer); resolve(ok); };
+      const onMsg = (e) => {
+        const m = e.data;
+        if (e.source === window && m && m.source === 'muse-helper' && m.type === 'navigate-result' && m.id === reqId) done(!!m.ok);
+      };
+      const timer = setTimeout(() => done(false), 1000);
+      window.addEventListener('message', onMsg);
+      window.postMessage({ source: 'muse-helper', type: 'navigate', id: reqId, path }, location.origin);
+    });
+  }
+
+  // 読み込み直して移動してきたとき
   function resumeJump() {
     let id = null;
     try { id = sessionStorage.getItem(JUMP); sessionStorage.removeItem(JUMP); } catch (e) {}
-    if (!id) return;
+    if (id) waitAndScroll(id);
+  }
+
+  // メッセージが表示されるまで待って移動する(最大15秒)
+  function waitAndScroll(id) {
     const until = Date.now() + 15000;
     (function wait() {
       const target = findMessage(id);
@@ -340,15 +476,21 @@
   }).observe(document.documentElement, { childList: true, subtree: true });
 
   try {
-    chrome.storage.local.get(KEY, (v) => {
+    chrome.storage.local.get([KEY, M.BOOKMARK_SORT_KEY, M.SIDEBAR_BADGE_KEY, M.THREAD_NAMES_KEY], (v) => {
+      names = (v && v[M.THREAD_NAMES_KEY]) || {};
       marks = (v && v[KEY] && typeof v[KEY] === 'object' && v[KEY]) || {};
+      sort = v && v[M.BOOKMARK_SORT_KEY] === 'added' ? 'added' : 'chat';
+      sidebarBadge = !(v && v[M.SIDEBAR_BADGE_KEY] === false);
       loaded = true;
       ensure();
       render();
       resumeJump();
     });
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || !changes[KEY]) return;
+      if (area !== 'local') return;
+      if (changes[M.SIDEBAR_BADGE_KEY]) { sidebarBadge = changes[M.SIDEBAR_BADGE_KEY].newValue !== false; badges(); }
+      if (changes[M.THREAD_NAMES_KEY]) { names = changes[M.THREAD_NAMES_KEY].newValue || {}; badges(); }
+      if (!changes[KEY]) return;
       marks = changes[KEY].newValue || {};
       ensure();
       render();

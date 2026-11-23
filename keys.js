@@ -6,6 +6,7 @@
   const KEY = M.SHORTCUTS_KEY;
   const HELP = 'muse-helper-keys-help';
   let enabled = true;
+  let codes = M.shortcutCodes(null); // { id: code }
 
   // メッセージの列をスクロールしている要素
   function scroller(from) {
@@ -72,7 +73,7 @@
       const r = document.createElement('div');
       r.style.cssText = 'display:flex;gap:12px;padding:3px 0;';
       const k = document.createElement('kbd');
-      k.textContent = M.ALT + s.key;
+      k.textContent = M.ALT + M.keyLabel(codes[s.id]);
       k.style.cssText = 'flex:none;min-width:56px;font:12px/1.5 ui-monospace,monospace;opacity:.8;';
       const t = document.createElement('span');
       t.textContent = s.title;
@@ -85,7 +86,7 @@
     box.appendChild(foot);
     document.body.appendChild(box);
     const close = (e) => {
-      if (e.type === 'keydown' && e.altKey && e.code === 'Slash') return; // もう一度 Alt+/ は下の処理で閉じる
+      if (e.type === 'keydown' && e.altKey && e.code === codes.help) return; // もう一度押したときは下の処理で閉じる
       box.remove();
       window.removeEventListener('keydown', close, true);
       window.removeEventListener('pointerdown', close, true);
@@ -98,19 +99,20 @@
   }
 
   const ACTIONS = {
-    KeyI: focusComposer,
-    KeyJ: latest,
-    ArrowUp: () => step(-1),
-    ArrowDown: () => step(1),
-    KeyS: () => M.search && M.search.toggle(),
-    KeyT: () => M.snippets && M.snippets.open(),
-    KeyB: () => M.bookmarks && M.bookmarks.toggle(),
-    Slash: help,
+    focus: focusComposer,
+    latest,
+    prev: () => step(-1),
+    next: () => step(1),
+    search: () => M.search && M.search.toggle(),
+    snippet: () => M.snippets && M.snippets.open(),
+    bookmarks: () => M.bookmarks && M.bookmarks.toggle(),
+    help,
   };
 
   window.addEventListener('keydown', (e) => {
     if (!enabled || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.isComposing || e.keyCode === 229) return;
-    const act = ACTIONS[e.code];
+    const id = Object.keys(codes).find((k) => codes[k] === e.code);
+    const act = id && ACTIONS[id];
     if (!act) return;
     // Muse のダイアログ(設定画面など)を開いている間は使わない
     if ([...document.querySelectorAll('[role="dialog"]')].some((d) => d.id !== HELP)) return;
@@ -119,16 +121,20 @@
     const editable = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
     if (editable && t !== composer) return;
     // 入力欄に文章があるときの Alt+↑↓ は、入力欄の中の移動(Mac の段落移動など)を優先する
-    if (t === composer && t.value && (e.code === 'ArrowUp' || e.code === 'ArrowDown')) return;
+    if (t === composer && t.value && /^Arrow/.test(e.code)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     act();
   }, true);
 
   try {
-    chrome.storage.local.get(KEY, (v) => { enabled = !(v && v[KEY] === false); });
+    chrome.storage.local.get([KEY, M.SHORTCUT_KEYS_KEY], (v) => {
+      enabled = !(v && v[KEY] === false);
+      codes = M.shortcutCodes(v && v[M.SHORTCUT_KEYS_KEY]);
+    });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes[KEY]) enabled = changes[KEY].newValue !== false;
+      if (area === 'local' && changes[M.SHORTCUT_KEYS_KEY]) codes = M.shortcutCodes(changes[M.SHORTCUT_KEYS_KEY].newValue);
     });
   } catch (e) {}
 })();

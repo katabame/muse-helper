@@ -1,5 +1,5 @@
 // 新しいメッセージの見張り(isolated world)。
-// - 利用の記録: 自分が送ったメッセージ・届いた返信を日ごとに数える(museActivity)
+// - 利用の記録: 自分が送ったメッセージ・届いた返信を日ごとに数える(museActivity。送信は時間帯ごとにも)
 // - 返信の通知: タブを見ていない間に相手の返信が書き終わったら、Chrome の通知で知らせる
 //
 // 「新しいメッセージ」は、このタブで初めて見えたメッセージのうち、送信時刻が直近(5分以内)のもの。
@@ -78,7 +78,14 @@
           const k = M.dayKey(Date.now());
           const d = days[k] || { sent: 0, recv: 0, sentChars: 0, recvChars: 0 };
           const chars = M.charCount(p.text.replace(/\s+/g, ''));
-          if (p.user) { d.sent++; d.sentChars += chars; } else { d.recv++; d.recvChars += chars; }
+          if (p.user) {
+            d.sent++;
+            d.sentChars += chars;
+            // 時間帯ごとの送信数(曜日と時間帯の表のため)
+            const h = String(new Date().getHours());
+            d.hours = d.hours || {};
+            d.hours[h] = (d.hours[h] || 0) + 1;
+          } else { d.recv++; d.recvChars += chars; }
           days[k] = d;
           const keys = Object.keys(days).sort();
           for (const old of keys.slice(0, Math.max(0, keys.length - KEEP_DAYS))) delete days[old];

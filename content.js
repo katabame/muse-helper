@@ -109,7 +109,7 @@
   }
 
   // ---------- 表示 ----------
-  let el, big, small, pace, warn, upd, dragging = null;
+  let el, big, small, pace, warn, upd, autoRow, dragging = null;
   let compact = false; // 縮小表示(クリックで切り替え)
   const COMPACT_KEY = MuseHelper.BADGE_COMPACT_KEY;
 
@@ -137,7 +137,10 @@
       'text-decoration:none;white-space:nowrap;cursor:pointer';
     pace = document.createElement('div');
     pace.style.cssText = 'margin-top:2px;font-size:11px;white-space:nowrap;display:none';
-    el.append(big, small, pace, warn, upd);
+    // 自動更新が止まっている・失敗しているときの行(値が古くなる前から出す)
+    autoRow = document.createElement('div');
+    autoRow.style.cssText = 'margin-top:3px;font-size:11px;white-space:nowrap;display:none;color:#c4b5fd';
+    el.append(big, small, autoRow, pace, warn, upd);
     document.documentElement.appendChild(el);
 
     // ドラッグで移動(位置は保存)
@@ -232,7 +235,7 @@
   // 縮小表示: 「57%」だけ(古い値なら ⚠、更新があれば ⬆ を添える)。詳細はマウスを乗せると出る
   function applyCompact() {
     if (!el) return;
-    const rows = [small, pace, warn, upd];
+    const rows = [small, autoRow, pace, warn, upd];
     if (!compact || !state || !MuseHelper.alive()) {
       el.style.minWidth = '120px';
       el.style.padding = '6px 10px';
@@ -250,6 +253,9 @@
     big.appendChild(a);
     if (warned) big.append(Object.assign(document.createElement('span'), { textContent: ' ⚠', style: 'color:#fbbf24;font-size:12px' }));
     if (updated) big.append(Object.assign(document.createElement('span'), { textContent: ' ⬆', style: 'color:#93c5fd;font-size:12px' }));
+    if (!warned && autoRow.style.display !== 'none') {
+      big.append(Object.assign(document.createElement('span'), { textContent: ' ⏸', title: '自動更新は停止中', style: 'color:#c4b5fd;font-size:12px' }));
+    }
     rows.forEach((r) => { r.style.display = 'none'; });
     el.style.minWidth = '0';
     el.style.padding = '4px 9px';
@@ -273,6 +279,7 @@
       big.textContent = 'Muse: 未取得';
       small.textContent = '設定画面を一度開くと自動で取得します';
       warn.style.display = 'none';
+      autoRow.style.display = 'none';
       pace.style.display = 'none';
       el.style.borderColor = 'rgba(255,255,255,.18)';
       return;
@@ -319,6 +326,21 @@
       warn.textContent = `⚠ ${ago(age)}の値 — ${howToUpdate}`;
     }
     warn.style.display = resetPassed || stale ? 'block' : 'none';
+    // 自動更新の状態(状態がまだ届いていないときは出さない。古い値の警告が出ているときはそちらに任せる)
+    const autoKnown = !!autoStatus;
+    const showAuto = autoKnown && !(resetPassed || stale) && (!auto || autoFailing);
+    if (showAuto) {
+      if (!auto) {
+        autoRow.textContent = '⏸ 自動更新は停止中 — 設定 → 一般 を開くと再開';
+        autoRow.style.color = '#c4b5fd';
+      } else {
+        autoRow.textContent = `⚠ 自動更新に失敗 — ${Math.round(autoStatus.intervalMs / 60000)}分後に再試行します`;
+        autoRow.style.color = '#fcd34d';
+      }
+    }
+    autoRow.style.display = showAuto ? 'block' : 'none';
+    // 自動更新が止まっている間は枠を点線にする
+    el.style.borderStyle = autoKnown && !auto ? 'dashed' : 'solid';
     el.style.borderColor = stale || resetPassed ? '#fbbf24' : color;
     el.style.opacity = stale || resetPassed ? '.85' : '1';
     const paceDetail = renderPace();
@@ -391,7 +413,7 @@
   // ---------- 起動 ----------
   let timer;
   // Muse Helper が自分で足した部品の中の変化には反応しない
-  const OWN = '#muse-usage-badge, .muse-helper-pane, .muse-helper-nav, .muse-ts-label, .muse-date-sep, #muse-helper-counter, #muse-helper-draft-chip, .muse-bm-btn, #muse-helper-bookmarks, #muse-helper-keys-help, #muse-helper-search, #muse-helper-snippets';
+  const OWN = '#muse-usage-badge, .muse-helper-pane, .muse-helper-nav, .muse-ts-label, .muse-date-sep, #muse-helper-counter, #muse-helper-draft-chip, .muse-bm-btn, #muse-helper-bookmarks, #muse-helper-keys-help, #muse-helper-search, #muse-helper-snippets, #muse-helper-guard, .muse-collapse-btn, .muse-bm-count';
   const isOwn = (n) => {
     const e = n && (n.nodeType === 1 ? n : n.parentElement);
     return !!(e && e.closest(OWN));

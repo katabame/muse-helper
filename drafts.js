@@ -3,6 +3,8 @@
 // - 送信や手動での全消去で入力欄が空になったら、そのチャットの下書きを削除
 // - 入力欄が空で下書きがあるときは、入力欄の左上に「下書きを復元」ボタンを出す
 // - 30日より古い下書きは自動で削除
+// - 送信以外で消えた下書き(全部消した・✕で破棄した・ほかの下書きで置き換えた)は「以前の下書き」として
+//   チャットごとに最大5件残し、復元ボタンの横の「以前の下書き」から戻せる
 (() => {
   'use strict';
   const M = MuseHelper;
@@ -14,6 +16,9 @@
 
   let enabled = true;
   let drafts = {}; // { [path]: { text, at } }
+  let history = {}; // { [path]: [{ text, at }] } 以前の下書き(新しい順)
+  const HISTORY_KEY = M.DRAFT_HISTORY_KEY;
+  const HISTORY_MAX = 5;
   let loaded = false;
 
   let lastKey = null; // 最後に入力があったチャット
@@ -38,7 +43,28 @@
     persist();
   }
 
-  function deleteDraft(key) {
+  // 以前の下書きに残す(同じ文章は先頭に移すだけ)
+  function keep(key, text) {
+    if (!key || !text || !text.trim()) return;
+    const list = (history[key] || []).filter((h) => h.text !== text);
+    history = { ...history, [key]: [{ text, at: Date.now() }, ...list].slice(0, HISTORY_MAX) };
+    try { chrome.storage.local.set({ [HISTORY_KEY]: history }); } catch (e) {}
+  }
+
+  // 以前の下書きから消す(text を省くと、そのチャットの分をすべて)
+  function forget(key, text) {
+    const list = history[key];
+    if (!list) return;
+    const next = text == null ? [] : list.filter((h) => h.text !== text);
+    if (next.length === list.length) return;
+    history = { ...history };
+    if (next.length) history[key] = next; else delete history[key];
+    try { chrome.storage.local.set({ [HISTORY_KEY]: history }); } catch (e) {}
+  }
+
+  // keepIt: 消す前に以前の下書きに残す
+  function deleteDraft(key, keepIt) {
+    if (keepIt && drafts[key]) keep(key, drafts[key].text);
     if (!key || !(key in drafts)) return;
     const next = { ...drafts };
     delete next[key];
@@ -63,6 +89,17 @@
       drafts = next;
       persist();
     }
+    const nextH = {};
+    let changedH = false;
+    for (const [k, list] of Object.entries(history)) {
+      const l = (Array.isArray(list) ? list : []).filter((h) => h && h.text && h.at >= limit);
+      if (l.length) nextH[k] = l;
+      if (!Array.isArray(list) || l.length !== list.length) changedH = true;
+    }
+    if (changedH) {
+      history = nextH;
+      try { chrome.storage.local.set({ [HISTORY_KEY]: history }); } catch (e) {}
+    }
   }
 
   // ---------- 入力の監視 ----------
@@ -71,6 +108,8 @@
   document.addEventListener('input', (e) => {
     const t = e.target;
     if (!isComposer(t)) return;
+    // 送信以外で空になった(全部消した): 消える前の文章を以前の下書きに残す
+    if (!t.value && lastValue && lastInput === t && chatKey() === lastKey && Date.now() - sendIntentAt >= SEND_WINDOW) keep(lastKey, lastValue);
     lastKey = chatKey();
     lastValue = t.value;
     lastInput = t;
@@ -114,8 +153,13 @@
     if (v === '' && lastValue && lastKey) {
       // 空になった: 送信操作の直後か、同じチャットのままなら送信(または消去)とみなして下書きを消す。
       // 別のチャットに移ったことで空になった場合は残す。
-      if (Date.now() - sendIntentAt < SEND_WINDOW || (sameInput && chatKey() === lastKey)) {
+      if (Date.now() - sendIntentAt < SEND_WINDOW) {
         clearTimeout(saveTimer);
+        deleteDraft(lastKey);
+        forget(lastKey, lastValue); // 送った文章は以前の下書きからも消す
+      } else if (sameInput && chatKey() === lastKey) {
+        clearTimeout(saveTimer);
+        keep(lastKey, lastValue);
         deleteDraft(lastKey);
       }
     }
@@ -124,7 +168,81 @@
   }
 
   // ---------- 復元ボタン ----------
-  let chip = null, restoreBtn = null, lastLayout = '';
+  let chip = null, restoreBtn = null, histBtn = null, histSep = null, menu = null, lastLayout = '';
+
+  // 以前の下書きの一覧(復元ボタンの上に出す)
+  function toggleMenu() {
+    if (menu) return closeMenu();
+    const list = history[chatKey()] || [];
+    if (!list.length || !chip) return;
+    menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    menu.className = 'text-text-primary bg-fill-blur-thick backdrop-blur-elevation-01 shadow-blur-elevation-01';
+    menu.style.cssText = 'position:absolute;bottom:100%;margin-bottom:6px;z-index:2;pointer-events:auto;border-radius:12px;padding:4px;' +
+      'width:min(380px,calc(100vw - 48px));font:12px/1.4 system-ui,sans-serif;';
+    list.forEach((h) => {
+      const item = document.createElement('div');
+      item.style.cssText = 'display:flex;align-items:center;gap:2px;';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'menuitem');
+      b.style.cssText = 'display:block;width:100%;text-align:left;background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:6px 8px;border-radius:8px;';
+      b.addEventListener('mouseenter', () => { b.style.background = 'rgba(128,128,128,.14)'; });
+      b.addEventListener('mouseleave', () => { b.style.background = 'none'; });
+      const meta = document.createElement('div');
+      meta.style.cssText = 'opacity:.6;font-size:11px;';
+      meta.textContent = `${M.ago(Date.now() - h.at)} ・ ${M.charCount(h.text).toLocaleString()}文字`;
+      const text = document.createElement('div');
+      text.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      text.textContent = h.text.replace(/\s+/g, ' ');
+      b.append(text, meta);
+      b.style.minWidth = '0';
+      b.addEventListener('click', () => {
+        closeMenu();
+        const key = chatKey();
+        const cur = drafts[key];
+        if (cur && cur.text !== h.text) keep(key, cur.text); // 今の下書きも残しておく
+        forget(key, h.text); // 戻した文章は今の下書きになるので、一覧からは消す
+        put(h.text);
+      });
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '✕';
+      del.title = 'この下書きを削除';
+      del.setAttribute('aria-label', 'この下書きを削除');
+      del.style.cssText = 'flex:none;background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:6px 8px;border-radius:8px;opacity:.6;';
+      del.addEventListener('click', () => {
+        forget(chatKey(), h.text);
+        closeMenu();
+        if ((history[chatKey()] || []).length) toggleMenu();
+        tick();
+      });
+      item.append(b, del);
+      menu.appendChild(item);
+    });
+    const all = document.createElement('button');
+    all.type = 'button';
+    all.textContent = 'このチャットの以前の下書きをすべて削除';
+    all.style.cssText = 'display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid rgba(128,128,128,.2);' +
+      'color:#dc2626;font:inherit;cursor:pointer;padding:8px 8px 6px;margin-top:2px;';
+    all.addEventListener('click', () => {
+      forget(chatKey());
+      closeMenu();
+      tick();
+    });
+    menu.appendChild(all);
+    chip.parentElement.appendChild(menu);
+    menu.style.left = chip.style.left;
+    setTimeout(() => document.addEventListener('pointerdown', outsideMenu, true));
+  }
+  function outsideMenu(e) {
+    if (menu && !menu.contains(e.target) && !(histBtn && histBtn.contains(e.target))) closeMenu();
+  }
+  function closeMenu() {
+    if (menu) menu.remove();
+    menu = null;
+    document.removeEventListener('pointerdown', outsideMenu, true);
+  }
 
   function buildChip() {
     chip = document.createElement('div');
@@ -147,31 +265,44 @@
     discard.setAttribute('aria-label', '下書きを破棄');
     discard.style.cssText = btnCss + 'padding-left:8px;opacity:.6;';
     discard.addEventListener('click', () => {
-      deleteDraft(chatKey());
+      deleteDraft(chatKey(), true);
       tick();
     });
-    chip.append(restoreBtn, sep, discard);
+    histSep = sep.cloneNode();
+    histBtn = document.createElement('button');
+    histBtn.type = 'button';
+    histBtn.style.cssText = btnCss;
+    histBtn.setAttribute('aria-haspopup', 'menu');
+    histBtn.addEventListener('click', toggleMenu);
+    chip.append(restoreBtn, sep, discard, histSep, histBtn);
   }
 
   function restore() {
-    const t = M.composerInput();
     const d = drafts[chatKey()];
-    if (!t || !d) return;
+    if (d) put(d.text);
+  }
+
+  // 入力欄に文章を入れる
+  function put(text) {
+    const t = M.composerInput();
+    if (!t) return;
     // React の制御下にある textarea なので、ネイティブの setter で値を入れてから input イベントで知らせる
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-    setter.call(t, d.text);
+    setter.call(t, text);
     t.dispatchEvent(new Event('input', { bubbles: true }));
     t.focus();
-    try { t.setSelectionRange(d.text.length, d.text.length); } catch (e) {}
+    try { t.setSelectionRange(text.length, text.length); } catch (e) {}
     tick();
   }
 
   function renderChip() {
     const t = M.composerInput();
     const d = drafts[chatKey()];
-    const show = enabled && loaded && t && !t.value && d && d.text;
+    const hist = history[chatKey()] || [];
+    const show = enabled && loaded && t && !t.value && ((d && d.text) || hist.length);
     if (!show) {
       if (chip) chip.style.display = 'none';
+      closeMenu();
       return;
     }
     if (!chip) buildChip();
@@ -184,9 +315,18 @@
       chip.style.left = `${Math.max(0, cr.left - ar.left) + 16}px`;
       lastLayout = layout;
     }
-    restoreBtn.textContent = `↩ 下書きを復元(${M.charCount(d.text).toLocaleString()}文字・${M.ago(Date.now() - d.at)})`;
-    const preview = d.text.length > 200 ? d.text.slice(0, 200) + '…' : d.text;
-    restoreBtn.title = preview;
+    // 今の下書きがなければ、以前の下書きのボタンだけ出す
+    const hasDraft = !!(d && d.text);
+    restoreBtn.style.display = hasDraft ? '' : 'none';
+    restoreBtn.nextElementSibling.style.display = hasDraft ? '' : 'none';
+    restoreBtn.nextElementSibling.nextElementSibling.style.display = hasDraft ? '' : 'none';
+    if (hasDraft) {
+      restoreBtn.textContent = `↩ 下書きを復元(${M.charCount(d.text).toLocaleString()}文字・${M.ago(Date.now() - d.at)})`;
+      restoreBtn.title = d.text.length > 200 ? d.text.slice(0, 200) + '…' : d.text;
+    }
+    histSep.style.display = hasDraft && hist.length ? '' : 'none';
+    histBtn.style.display = hist.length ? '' : 'none';
+    histBtn.textContent = `以前の下書き(${hist.length})${menu ? ' ▴' : ' ▾'}`;
     chip.style.display = 'flex';
   }
 
@@ -201,8 +341,9 @@
 
   // ---------- 起動 ----------
   try {
-    chrome.storage.local.get([KEY, ENABLED_KEY], (v) => {
+    chrome.storage.local.get([KEY, ENABLED_KEY, HISTORY_KEY], (v) => {
       drafts = (v && v[KEY] && typeof v[KEY] === 'object' && v[KEY]) || {};
+      history = (v && v[HISTORY_KEY] && typeof v[HISTORY_KEY] === 'object' && v[HISTORY_KEY]) || {};
       enabled = !(v && v[ENABLED_KEY] === false);
       loaded = true;
       purgeOld();
@@ -211,8 +352,9 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       if (changes[KEY]) drafts = changes[KEY].newValue || {}; // 他のタブや設定画面での変更
+      if (changes[HISTORY_KEY]) history = changes[HISTORY_KEY].newValue || {};
       if (changes[ENABLED_KEY]) enabled = changes[ENABLED_KEY].newValue !== false;
-      if (changes[KEY] || changes[ENABLED_KEY]) tick();
+      if (changes[KEY] || changes[ENABLED_KEY] || changes[HISTORY_KEY]) tick();
     });
   } catch (e) {}
 
