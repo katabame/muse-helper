@@ -7,6 +7,8 @@
 - **メッセージの時刻**: 各メッセージの下に送信時刻を表示します(自分のメッセージは右寄せ)。
   muse.ai の設定画面に追加される「Muse Helper」項目から 24時間表記(`15:05`)/ 12時間表記(`3:05 pm`)を切り替えられます。
 
+- **アップデート通知**: GitHub Releases に新しいバージョンがあると、使用率バッジと設定画面の「Muse Helper」項目でお知らせします(1時間ごとに確認)。
+
 ## インストール
 
 1. このリポジトリをダウンロード(または clone)します。
@@ -20,4 +22,5 @@
 - 使用率は、設定画面の `role="progressbar"` (`aria-valuenow`) と周辺のテキストを DOM から読み取っています(`content.js`)。
 - 設定画面の「Muse Helper」項目は、設定ダイアログ(見出し「設定」の `role="dialog"`)を検出し、サイドバーと右ペインに要素を差し込んで表示しています(`settings.js`)。
 - メッセージ時刻は、React の内部データ(メッセージ要素の fiber に保持された `createdAt`)から読み取っています(`timestamps.js`、MAIN world で動作)。
+- アップデート確認は、service worker(`background.js`)が1時間ごとに GitHub API の `releases/latest` を取得し、タグ(例: `v0.4.0`)を `manifest.json` の `version` と比較しています。リリースのタグは `v<version>` の形式にしてください。
 - どちらも Muse の画面や内部実装に依存するため、Muse 側の更新で動かなくなる可能性があります。

@@ -6,6 +6,7 @@
   const STALE_MS = 60 * 60 * 1000; // 1時間以上更新がなければ「古い」表示
 
   let state = null; // { label, used, reset, extra, at }
+  let update = null; // GitHub Releases の確認結果(background.js が保存)
 
   // ---------- 読み取り ----------
   function scan() {
@@ -45,7 +46,7 @@
   }
 
   // ---------- 表示 ----------
-  let el, big, small, warn, dragging = null;
+  let el, big, small, warn, upd, dragging = null;
 
   function build() {
     el = document.createElement('div');
@@ -63,11 +64,18 @@
     small.style.cssText = 'opacity:.75;font-size:11px;white-space:nowrap';
     warn = document.createElement('div');
     warn.style.cssText = 'margin-top:3px;font-size:11px;font-weight:600;color:#fbbf24;white-space:nowrap;display:none';
-    el.append(big, small, warn);
+    upd = document.createElement('a');
+    upd.target = '_blank';
+    upd.rel = 'noopener';
+    upd.style.cssText =
+      'display:none;margin-top:3px;font-size:11px;font-weight:600;color:#93c5fd;' +
+      'text-decoration:none;white-space:nowrap;cursor:pointer';
+    el.append(big, small, warn, upd);
     document.documentElement.appendChild(el);
 
     // ドラッグで移動(位置は保存)
     el.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('a')) return; // リンクはドラッグ対象にしない
       const r = el.getBoundingClientRect();
       dragging = { dx: e.clientX - r.left, dy: e.clientY - r.top };
       el.setPointerCapture(e.pointerId);
@@ -87,12 +95,18 @@
     });
   }
 
-  function ago(ms) {
-    const m = Math.floor(ms / 60000);
-    if (m < 1) return 'たった今';
-    if (m < 60) return `${m}分前`;
-    const h = Math.floor(m / 60);
-    return h < 24 ? `${h}時間前` : `${Math.floor(h / 24)}日前`;
+  const ago = MuseHelper.ago;
+
+  function renderUpdate() {
+    const cur = MuseHelper.version();
+    if (update && update.latest && MuseHelper.isNewer(update.latest, cur)) {
+      upd.textContent = `⬆ ${update.latest} があります(現在 v${cur})`;
+      upd.href = update.url || MuseHelper.RELEASES_URL;
+      upd.title = 'クリックでリリースページを開きます';
+      upd.style.display = 'block';
+    } else {
+      upd.style.display = 'none';
+    }
   }
 
   // 「11月24日」→ 今日から何日後か(過ぎていれば負)。年は近い方を採用する。
@@ -110,6 +124,7 @@
 
   function render() {
     if (!el) build();
+    renderUpdate();
     if (!state) {
       big.textContent = 'Muse: 未取得';
       small.textContent = '設定画面を開くと取得します';
@@ -184,14 +199,21 @@
   }
 
   try {
-    chrome.storage.local.get([STORE_KEY, POS_KEY], (v) => {
+    chrome.storage.local.get([STORE_KEY, POS_KEY, MuseHelper.UPDATE_KEY], (v) => {
       if (v && v[STORE_KEY]) state = v[STORE_KEY];
+      update = (v && v[MuseHelper.UPDATE_KEY]) || null;
       start();
       const p = v && v[POS_KEY];
       if (p && el) {
         el.style.left = p.left;
         el.style.top = p.top;
         el.style.right = 'auto';
+      }
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[MuseHelper.UPDATE_KEY]) {
+        update = changes[MuseHelper.UPDATE_KEY].newValue || null;
+        if (el) render();
       }
     });
   } catch (e) {

@@ -11,6 +11,8 @@
   const TITLES = ['設定', 'Settings'];
 
   let tsFormat = '24';
+  let update = null; // background.js が保存する GitHub Releases の確認結果
+  let checking = false;
 
   // ---------- スタイル ----------
   const style = document.createElement('style');
@@ -134,13 +136,104 @@
     });
     group.appendChild(card);
     body.appendChild(group);
+    body.appendChild(buildUpdateSection());
 
     pane.append(header, body);
     syncPane(pane);
     return pane;
   }
 
+  // ---------- アップデート ----------
+  function row(cls) {
+    return el('div', 'box-border flex min-w-0 items-center self-stretch min-h-[44px] rounded-12 px-3 ' + (cls || ''));
+  }
+  function texts(title, sub, subCls) {
+    const t = el('div', 'min-w-0 flex-1 self-center');
+    const col = el('div', 'min-h-0 min-w-0 flex flex-col gap-x-0.5 gap-y-0.5');
+    col.appendChild(el('span', 'mx-0 break-words text-subheadline text-text-primary', title));
+    if (sub != null) col.appendChild(el('span', 'mx-0 break-words text-caption-1 text-text-secondary ' + (subCls || ''), sub));
+    t.appendChild(col);
+    return t;
+  }
+  const divider = () => el('div', 'h-px bg-black/[0.04] dark:bg-white/[0.06] mx-3');
+
+  function buildUpdateSection() {
+    const wrap = el('div', 'space-y-1.5');
+    wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', 'アップデート'));
+    const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
+
+    const status = row();
+    status.append(texts('バージョン', '', 'muse-helper-upd-checked'));
+    status.firstChild.querySelector('.text-subheadline').classList.add('muse-helper-upd-status');
+
+    const link = el('a', 'muse-helper-upd-link box-border flex min-w-0 items-center self-stretch min-h-[44px] rounded-12 px-3 hover:bg-fill-secondary-elevated');
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.appendChild(texts('リリースページを開く', 'ダウンロードして読み込み直すと更新できます'));
+    const linkDivider = divider();
+    linkDivider.classList.add('muse-helper-upd-link-divider');
+
+    const btn = row('muse-helper-upd-btn hover:bg-fill-secondary-elevated');
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('tabindex', '0');
+    btn.style.cursor = 'pointer';
+    btn.appendChild(texts('今すぐ確認', '1時間ごとに自動で確認しています'));
+    const run = () => {
+      if (checking) return;
+      checking = true;
+      document.querySelectorAll('.' + PANE).forEach(syncUpdate);
+      try {
+        chrome.runtime.sendMessage({ type: 'museCheckUpdate' }, (res) => {
+          void chrome.runtime.lastError;
+          checking = false;
+          if (res) update = res;
+          document.querySelectorAll('.' + PANE).forEach(syncUpdate);
+        });
+      } catch (e) {
+        checking = false;
+        document.querySelectorAll('.' + PANE).forEach(syncUpdate);
+      }
+    };
+    btn.addEventListener('click', run);
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
+    });
+
+    card.append(status, linkDivider, link, divider(), btn);
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  function syncUpdate(pane) {
+    const status = pane.querySelector('.muse-helper-upd-status');
+    const checked = pane.querySelector('.muse-helper-upd-checked');
+    const link = pane.querySelector('.muse-helper-upd-link');
+    const linkDivider = pane.querySelector('.muse-helper-upd-link-divider');
+    const btnTitle = pane.querySelector('.muse-helper-upd-btn .text-subheadline');
+    if (!status) return;
+    const cur = MuseHelper.version();
+    const u = update;
+    const has = !!(u && u.latest && MuseHelper.isNewer(u.latest, cur));
+
+    if (has) status.textContent = `${u.latest} があります(現在 v${cur})`;
+    else if (u && u.error && !u.latest) status.textContent = `v${cur}(確認できませんでした)`;
+    else if (u && u.checkedAt && !u.latest) status.textContent = `v${cur}(リリースはまだありません)`;
+    else if (u && u.latest) status.textContent = `v${cur}(最新です)`;
+    else status.textContent = `v${cur}(未確認)`;
+
+    const parts = [];
+    if (u && u.checkedAt) parts.push(`最終確認: ${MuseHelper.ago(Date.now() - u.checkedAt)}`);
+    if (u && u.error) parts.push(`エラー: ${u.error}`);
+    checked.textContent = parts.join(' ・ ') || 'まだ確認していません';
+
+    link.href = (u && u.url) || MuseHelper.RELEASES_URL;
+    link.style.display = has ? '' : 'none';
+    linkDivider.style.display = has ? '' : 'none';
+    btnTitle.textContent = checking ? '確認中…' : '今すぐ確認';
+  }
+
   function syncPane(pane) {
+    syncUpdate(pane);
     pane.querySelectorAll('[role="radio"]').forEach((r) => {
       r.setAttribute('aria-checked', String(r.dataset.value === tsFormat));
     });
@@ -200,14 +293,19 @@
   }).observe(document.documentElement, { childList: true, subtree: true });
 
   try {
-    chrome.storage.local.get(TS_FMT_KEY, (v) => {
+    chrome.storage.local.get([TS_FMT_KEY, MuseHelper.UPDATE_KEY], (v) => {
       tsFormat = v && v[TS_FMT_KEY] === '12' ? '12' : '24';
+      update = (v && v[MuseHelper.UPDATE_KEY]) || null;
       document.querySelectorAll('.' + PANE).forEach(syncPane);
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes[TS_FMT_KEY]) {
         tsFormat = changes[TS_FMT_KEY].newValue === '12' ? '12' : '24';
         document.querySelectorAll('.' + PANE).forEach(syncPane);
+      }
+      if (area === 'local' && changes[MuseHelper.UPDATE_KEY]) {
+        update = changes[MuseHelper.UPDATE_KEY].newValue || null;
+        document.querySelectorAll('.' + PANE).forEach(syncUpdate);
       }
     });
   } catch (e) {}
