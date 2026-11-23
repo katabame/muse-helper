@@ -4,6 +4,7 @@
 (() => {
   'use strict';
   const TS_FMT_KEY = 'museTsFormat'; // '12' | '24'(content.js / timestamps.js が参照)
+  const TS_MODE_KEY = 'museTsMode'; // 'abs' | 'rel' | 'both'(時刻のみ / 相対時刻のみ / 両方)
   const NAV = 'muse-helper-nav';
   const PANE = 'muse-helper-pane';
   const OPEN = 'muse-helper-open'; // 独自ページ表示中にダイアログへ付けるクラス
@@ -11,8 +12,16 @@
   const TITLES = ['設定', 'Settings'];
 
   let tsFormat = '24';
+  let tsMode = 'abs';
+  const normMode = (v) => (v === 'rel' || v === 'both' ? v : 'abs');
   let update = null; // background.js が保存する GitHub Releases の確認結果
   let checking = false;
+  let usage = null; // content.js が保存する使用率 { used, reset, at, ... }
+  let history = []; // 使用率の記録 [{ used, at }]
+  let showPace = true; // オーバーレイに使用ペースを表示するか
+  let draftsEnabled = true; // 下書きの自動保存
+  let drafts = {}; // 保存中の下書き { [path]: { text, at } }
+  let confirmClearUntil = 0; // 「すべて削除」の確認待ちの期限
 
   // ---------- スタイル ----------
   const style = document.createElement('style');
@@ -25,6 +34,14 @@
     .${PANE} [role="radio"] { cursor: pointer; }
     .${PANE} [role="radio"] .muse-helper-check { visibility: hidden; }
     .${PANE} [role="radio"][aria-checked="true"] .muse-helper-check { visibility: visible; }
+    /* オン/オフのスイッチ */
+    .${PANE} [role="switch"] { cursor: pointer; }
+    .muse-helper-switch { position: relative; width: 40px; height: 24px; border-radius: 12px; flex: none;
+      background: rgba(120,120,128,.32); transition: background-color .15s; }
+    .muse-helper-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px;
+      border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .15s; }
+    [role="switch"][aria-checked="true"] .muse-helper-switch { background: #34c759; }
+    [role="switch"][aria-checked="true"] .muse-helper-switch::after { transform: translateX(16px); }
   `;
   (document.head || document.documentElement).appendChild(style);
 
@@ -100,22 +117,39 @@
     header.appendChild(headerRow);
 
     const body = el('div', 'space-y-6 pb-4 px-6');
+    body.appendChild(buildPaceSection());
     body.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', 'メッセージの時刻'));
 
     const group = el('div', 'flex flex-col gap-2');
-    const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
-    card.setAttribute('role', 'radiogroup');
-    card.setAttribute('aria-label', '時刻の表示形式');
-
-    const options = [
+    group.appendChild(radioCard('mode', '時刻の表示内容', [
+      { value: 'abs', title: '時刻のみ', example: '例: 15:05' },
+      { value: 'rel', title: '相対時刻のみ', example: '例: 5分前(7日以上前は日付と時刻)' },
+      { value: 'both', title: '時刻と相対時刻', example: '例: 15:05・5分前' },
+    ], setMode));
+    group.appendChild(radioCard('format', '時刻の表記', [
       { value: '24', title: '24時間表記', example: '例: 15:05' },
       { value: '12', title: '12時間表記', example: '例: 3:05 pm' },
-    ];
+    ], setFormat));
+    body.appendChild(group);
+    body.appendChild(buildDraftsSection());
+    body.appendChild(buildUpdateSection());
+
+    pane.append(header, body);
+    syncPane(pane);
+    return pane;
+  }
+
+  // 選択肢のカード(行をクリックで選択、選ばれた行にチェック)
+  function radioCard(groupName, label, options, onChoose) {
+    const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
+    card.setAttribute('role', 'radiogroup');
+    card.setAttribute('aria-label', label);
     options.forEach((o, i) => {
       if (i > 0) card.appendChild(el('div', 'h-px bg-black/[0.04] dark:bg-white/[0.06] mx-3'));
       const row = el('div', 'box-border flex min-w-0 items-center self-stretch min-h-[44px] rounded-12 px-3 hover:bg-fill-secondary-elevated');
       row.setAttribute('role', 'radio');
       row.setAttribute('tabindex', '0');
+      row.dataset.group = groupName;
       row.dataset.value = o.value;
       const texts = el('div', 'min-w-0 flex-1 self-center');
       const col = el('div', 'min-h-0 min-w-0 flex flex-col gap-x-0.5 gap-y-0.5');
@@ -127,20 +161,172 @@
       const check = el('div', 'muse-helper-check flex items-center self-center ps-2 text-text-primary');
       check.appendChild(svg('20', ICON_CHECK, 2.2));
       row.append(texts, check);
-      const choose = () => setFormat(o.value);
+      const choose = () => onChoose(o.value);
       row.addEventListener('click', choose);
       row.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); }
       });
       card.appendChild(row);
     });
-    group.appendChild(card);
-    body.appendChild(group);
-    body.appendChild(buildUpdateSection());
+    return card;
+  }
 
-    pane.append(header, body);
-    syncPane(pane);
-    return pane;
+  // ---------- 使用ペース ----------
+  const PACE_ROWS = [
+    ['week', '週の経過'],
+    ['target', '目安との比較'],
+    ['avg', '平均ペースでの予測'],
+    ['recent', '直近ペースでの予測'],
+  ];
+
+  function buildPaceSection() {
+    const wrap = el('div', 'space-y-1.5');
+    wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', '使用ペース'));
+    const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
+    PACE_ROWS.forEach(([key, title], i) => {
+      if (i > 0) card.appendChild(divider());
+      const r = row('muse-helper-pace-' + key);
+      r.appendChild(texts(title, ''));
+      const value = el('div', 'muse-helper-pace-value flex items-center self-center ps-2 text-subheadline text-text-primary text-end');
+      r.appendChild(value);
+      card.appendChild(r);
+    });
+    wrap.appendChild(card);
+    wrap.appendChild(el('div', 'muse-helper-pace-note px-3 pt-1.5 text-caption-1 text-text-secondary'));
+
+    // オーバーレイに表示する/しない
+    const optCard = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5 mt-3');
+    optCard.appendChild(switchRow('muse-helper-pace-toggle', 'オーバーレイに表示', '使用率のオーバーレイに予測の行を表示します', () => {
+      showPace = !showPace;
+      document.querySelectorAll('.' + PANE).forEach(syncPace);
+      try { chrome.storage.local.set({ [MuseHelper.PACE_BADGE_KEY]: showPace }); } catch (e) {}
+    }));
+    wrap.appendChild(optCard);
+    return wrap;
+  }
+
+  function syncPace(pane) {
+    const get = (key) => {
+      const r = pane.querySelector('.muse-helper-pace-' + key);
+      return r && { value: r.querySelector('.muse-helper-pace-value'), sub: r.querySelector('.text-caption-1') };
+    };
+    const note = pane.querySelector('.muse-helper-pace-note');
+    if (!note) return;
+    const sw = pane.querySelector('.muse-helper-pace-toggle');
+    if (sw) sw.setAttribute('aria-checked', String(showPace));
+    const set = (key, value, sub, sev) => {
+      const r = get(key);
+      r.value.textContent = value;
+      r.value.style.color = sev >= 0 ? MuseHelper.SEVERITY_COLOR[sev] : '';
+      r.sub.textContent = sub;
+    };
+    const M = MuseHelper, fmt12 = tsFormat === '12';
+    const f = M.forecast(usage, history);
+
+    if (!f || f.resetPassed) {
+      const msg = !usage ? '使用率がまだ取得されていません' :
+        !f ? 'リセット日が取得できていません' : 'リセット日を過ぎています';
+      set('week', '—', msg + '(「一般」の利用状況を開くと更新されます)', -1);
+      ['target', 'avg', 'recent'].forEach((k) => set(k, '—', '', -1));
+      note.textContent = '';
+      return;
+    }
+
+    const span = `${M.when(f.weekStart, fmt12)} 〜 ${M.when(f.resetAt, fmt12)}`;
+    set('week', `${Math.round(f.elapsed * 100)}%`, `${span}(リセットは 0:00 と仮定)`, -1);
+
+    const diffSev = f.diff > 10 ? 2 : f.diff > 0 ? 1 : 0;
+    set('target', `${M.signed(f.diff)}%`,
+      `目安 ${Math.round(f.target)}% に対して ${f.used}% 使用` +
+      (f.diff > 0 ? '(使いすぎ)' : '(余裕あり)'), diffSev);
+
+    const proj = (key, p, desc) => {
+      if (p.insufficient) return set(key, '—', p.insufficient, -1);
+      set(key, M.projText(p, fmt12), `${desc}1日あたり ${p.perDay.toFixed(1)}%`, M.severity(p));
+    };
+    proj('avg', f.avg, '週の始まりから ');
+    proj('recent', f.recent, f.recent.insufficient ? '' :
+      `直近 ${Math.round(f.recent.span / M.HOUR)}時間で ${M.signed(f.recent.delta)}% ・ `);
+
+    note.textContent =
+      `最終読み取り: ${M.ago(Date.now() - f.at)}。` +
+      '「一般」の利用状況を開くたびに更新・記録されます。';
+  }
+
+  // オン/オフのスイッチ行(状態は aria-checked で表す)
+  function switchRow(cls, title, sub, onToggle) {
+    return actionRow(cls, 'switch', title, sub, onToggle, el('div', 'muse-helper-switch'));
+  }
+  // クリック・Enter・スペースで動く行
+  function actionRow(cls, role, title, sub, onClick, trailing) {
+    const r = row(cls + ' hover:bg-fill-secondary-elevated');
+    r.setAttribute('role', role);
+    r.setAttribute('tabindex', '0');
+    r.style.cursor = 'pointer';
+    r.appendChild(texts(title, sub));
+    if (trailing) {
+      const w = el('div', 'flex items-center self-center ps-2');
+      w.appendChild(trailing);
+      r.appendChild(w);
+    }
+    r.addEventListener('click', onClick);
+    r.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); }
+    });
+    return r;
+  }
+
+  // ---------- 下書き ----------
+  function buildDraftsSection() {
+    const wrap = el('div', 'space-y-1.5');
+    wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', '下書き'));
+    const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
+    card.appendChild(switchRow('muse-helper-drafts-toggle', '自動保存',
+      '入力中の文章をチャットごとに保存し、入力欄の上のボタンで復元できます', () => {
+        draftsEnabled = !draftsEnabled;
+        document.querySelectorAll('.' + PANE).forEach(syncDrafts);
+        try { chrome.storage.local.set({ [MuseHelper.DRAFTS_ENABLED_KEY]: draftsEnabled }); } catch (e) {}
+      }));
+    card.appendChild(divider());
+    const countRow = row('muse-helper-drafts-count');
+    countRow.appendChild(texts('保存中の下書き', '30日たった下書きは自動で削除されます'));
+    countRow.appendChild(el('div', 'muse-helper-drafts-num flex items-center self-center ps-2 text-subheadline text-text-primary'));
+    card.appendChild(countRow);
+    card.appendChild(divider());
+    card.appendChild(actionRow('muse-helper-drafts-clear', 'button', 'すべての下書きを削除', '', () => {
+      const n = Object.keys(drafts).length;
+      if (!n) return;
+      if (Date.now() > confirmClearUntil) {
+        // 誤操作防止: 1回目は確認表示だけ(3秒以内にもう一度押すと削除)
+        confirmClearUntil = Date.now() + 3000;
+        document.querySelectorAll('.' + PANE).forEach(syncDrafts);
+        setTimeout(() => document.querySelectorAll('.' + PANE).forEach(syncDrafts), 3100);
+        return;
+      }
+      confirmClearUntil = 0;
+      drafts = {};
+      try { chrome.storage.local.set({ [MuseHelper.DRAFTS_KEY]: {} }); } catch (e) {}
+      document.querySelectorAll('.' + PANE).forEach(syncDrafts);
+    }));
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  function syncDrafts(pane) {
+    const sw = pane.querySelector('.muse-helper-drafts-toggle');
+    if (!sw) return;
+    sw.setAttribute('aria-checked', String(draftsEnabled));
+    const n = Object.keys(drafts).length;
+    pane.querySelector('.muse-helper-drafts-num').textContent = `${n}件`;
+    const clear = pane.querySelector('.muse-helper-drafts-clear');
+    const title = clear.querySelector('.text-subheadline');
+    const sub = clear.querySelector('.text-caption-1');
+    const confirming = Date.now() <= confirmClearUntil;
+    title.textContent = confirming ? 'もう一度押すと削除します' : 'すべての下書きを削除';
+    title.style.color = n ? MuseHelper.SEVERITY_COLOR[2] : '';
+    sub.textContent = n ? (confirming ? '3秒以内に押してください' : `${n}件の下書きを削除します`) : '削除する下書きはありません';
+    clear.style.opacity = n ? '' : '.5';
+    clear.style.cursor = n ? 'pointer' : 'default';
   }
 
   // ---------- アップデート ----------
@@ -234,8 +420,11 @@
 
   function syncPane(pane) {
     syncUpdate(pane);
+    syncPace(pane);
+    syncDrafts(pane);
     pane.querySelectorAll('[role="radio"]').forEach((r) => {
-      r.setAttribute('aria-checked', String(r.dataset.value === tsFormat));
+      const cur = r.dataset.group === 'mode' ? tsMode : tsFormat;
+      r.setAttribute('aria-checked', String(r.dataset.value === cur));
     });
   }
 
@@ -243,6 +432,12 @@
     tsFormat = v === '12' ? '12' : '24';
     document.querySelectorAll('.' + PANE).forEach(syncPane);
     try { chrome.storage.local.set({ [TS_FMT_KEY]: tsFormat }); } catch (e) {}
+  }
+
+  function setMode(v) {
+    tsMode = normMode(v);
+    document.querySelectorAll('.' + PANE).forEach(syncPane);
+    try { chrome.storage.local.set({ [TS_MODE_KEY]: tsMode }); } catch (e) {}
   }
 
   // ---------- 開閉 ----------
@@ -294,19 +489,41 @@
   }).observe(document.documentElement, { childList: true, subtree: true });
 
   try {
-    chrome.storage.local.get([TS_FMT_KEY, MuseHelper.UPDATE_KEY], (v) => {
+    chrome.storage.local.get([TS_FMT_KEY, TS_MODE_KEY, MuseHelper.UPDATE_KEY, MuseHelper.USAGE_KEY, MuseHelper.HISTORY_KEY, MuseHelper.PACE_BADGE_KEY,
+      MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY], (v) => {
+      showPace = !(v && v[MuseHelper.PACE_BADGE_KEY] === false);
+      draftsEnabled = !(v && v[MuseHelper.DRAFTS_ENABLED_KEY] === false);
+      drafts = (v && v[MuseHelper.DRAFTS_KEY]) || {};
       tsFormat = v && v[TS_FMT_KEY] === '12' ? '12' : '24';
+      tsMode = normMode(v && v[TS_MODE_KEY]);
+      usage = (v && v[MuseHelper.USAGE_KEY]) || null;
+      history = (v && Array.isArray(v[MuseHelper.HISTORY_KEY]) && v[MuseHelper.HISTORY_KEY]) || [];
       update = (v && v[MuseHelper.UPDATE_KEY]) || null;
       document.querySelectorAll('.' + PANE).forEach(syncPane);
     });
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes[TS_FMT_KEY]) {
-        tsFormat = changes[TS_FMT_KEY].newValue === '12' ? '12' : '24';
+      if (area === 'local' && (changes[TS_FMT_KEY] || changes[TS_MODE_KEY])) {
+        if (changes[TS_FMT_KEY]) tsFormat = changes[TS_FMT_KEY].newValue === '12' ? '12' : '24';
+        if (changes[TS_MODE_KEY]) tsMode = normMode(changes[TS_MODE_KEY].newValue);
         document.querySelectorAll('.' + PANE).forEach(syncPane);
       }
       if (area === 'local' && changes[MuseHelper.UPDATE_KEY]) {
         update = changes[MuseHelper.UPDATE_KEY].newValue || null;
         document.querySelectorAll('.' + PANE).forEach(syncUpdate);
+      }
+      if (area === 'local' && (changes[MuseHelper.DRAFTS_KEY] || changes[MuseHelper.DRAFTS_ENABLED_KEY])) {
+        if (changes[MuseHelper.DRAFTS_KEY]) drafts = changes[MuseHelper.DRAFTS_KEY].newValue || {};
+        if (changes[MuseHelper.DRAFTS_ENABLED_KEY]) draftsEnabled = changes[MuseHelper.DRAFTS_ENABLED_KEY].newValue !== false;
+        document.querySelectorAll('.' + PANE).forEach(syncDrafts);
+      }
+      if (area === 'local' && changes[MuseHelper.PACE_BADGE_KEY]) {
+        showPace = changes[MuseHelper.PACE_BADGE_KEY].newValue !== false;
+        document.querySelectorAll('.' + PANE).forEach(syncPace);
+      }
+      if (area === 'local' && (changes[MuseHelper.USAGE_KEY] || changes[MuseHelper.HISTORY_KEY])) {
+        if (changes[MuseHelper.USAGE_KEY]) usage = changes[MuseHelper.USAGE_KEY].newValue || null;
+        if (changes[MuseHelper.HISTORY_KEY]) history = changes[MuseHelper.HISTORY_KEY].newValue || [];
+        document.querySelectorAll('.' + PANE).forEach(syncPace);
       }
     });
   } catch (e) {}

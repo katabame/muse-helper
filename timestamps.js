@@ -30,6 +30,13 @@
   // 表示形式: content.js が <html data-muse-ts-format="12|24"> に設定する(既定は24時間)
   const FMT_ATTR = 'data-muse-ts-format';
   const is12h = () => document.documentElement.getAttribute(FMT_ATTR) === '12';
+  // 表示内容: <html data-muse-ts-mode="abs|rel|both">(時刻のみ / 相対時刻のみ / 両方。既定は時刻のみ)
+  const MODE_ATTR = 'data-muse-ts-mode';
+  const mode = () => {
+    const v = document.documentElement.getAttribute(MODE_ATTR);
+    return v === 'rel' || v === 'both' ? v : 'abs';
+  };
+  const REL_LIMIT = 7 * 24 * 60 * 60 * 1000; // 「相対時刻のみ」でも、これより前は日付と時刻で表示
 
   const pad = (n) => String(n).padStart(2, '0');
   function clock(t, withSec) {
@@ -38,8 +45,21 @@
     const h = t.getHours();
     return `${h % 12 || 12}:${pad(t.getMinutes())}${sec} ${h < 12 ? 'am' : 'pm'}`;
   }
+  function relative(t, now) {
+    const m = Math.floor((now - t) / 60000);
+    if (m < 1) return 'たった今';
+    if (m < 60) return `${m}分前`;
+    const h = Math.floor(m / 60);
+    return h < 24 ? `${h}時間前` : `${Math.floor(h / 24)}日前`;
+  }
   function format(t) {
     const now = new Date();
+    const md = mode();
+    if (md === 'rel' && now - t < REL_LIMIT) return relative(t, now);
+    const abs = absolute(t, now);
+    return md === 'both' ? `${abs}・${relative(t, now)}` : abs;
+  }
+  function absolute(t, now) {
     const hm = clock(t, false);
     if (t.toDateString() === now.toDateString()) return hm;
     const md = `${t.getMonth() + 1}/${t.getDate()}`;
@@ -60,21 +80,38 @@
     const align = right ? 'right' : 'left';
 
     let label = el.querySelector(':scope > .' + CLS);
-    const fmt = is12h() ? '12' : '24';
-    if (label && label.dataset.iso === iso && label.dataset.fmt === fmt && label.style.textAlign === align) return;
+    const text = format(t);
+    if (label && label.dataset.iso === iso && label.textContent === text && label.style.textAlign === align) return;
     if (!label) {
+      // 行全体(幅100%)はマウスに反応させず、Muse 側の操作を邪魔しないようにする。
+      // 文字の部分(span)だけ反応させて、マウスを乗せると秒までの日時が出るようにする。
       label = document.createElement('div');
       label.className = CLS;
       label.style.cssText =
         'display:block;width:100%;flex:0 0 100%;box-sizing:border-box;padding:2px 8px 0;' +
         'font:11px/1.2 system-ui,sans-serif;opacity:.5;pointer-events:none;';
+      const span = document.createElement('span');
+      span.style.cssText = 'pointer-events:auto;cursor:default;';
+      label.appendChild(span);
       el.appendChild(label);
     }
+    const span = textSpan(label);
     label.style.textAlign = align;
     label.dataset.iso = iso;
-    label.dataset.fmt = fmt;
-    label.textContent = format(t);
-    label.title = full(t);
+    span.textContent = text;
+    span.title = full(t);
+  }
+
+  // ラベル内の文字の span(古い形式のラベルなら作り直す)
+  function textSpan(label) {
+    let span = label.firstElementChild;
+    if (!span) {
+      label.textContent = '';
+      span = document.createElement('span');
+      span.style.cssText = 'pointer-events:auto;cursor:default;';
+      label.appendChild(span);
+    }
+    return span;
   }
 
   function scan() {
@@ -89,6 +126,15 @@
     timer = setTimeout(scan, 200);
   }).observe(document.documentElement, { childList: true, subtree: true });
   // 表示形式が切り替わったら即座に描き直す
-  new MutationObserver(scan).observe(document.documentElement, { attributes: true, attributeFilter: [FMT_ATTR] });
+  new MutationObserver(scan).observe(document.documentElement, { attributes: true, attributeFilter: [FMT_ATTR, MODE_ATTR] });
+  // 相対時刻(と日付の切り替わり)を反映するため、1分ごとに既存のラベルを書き直す
+  setInterval(() => {
+    document.querySelectorAll('.' + CLS).forEach((label) => {
+      const t = new Date(label.dataset.iso);
+      if (isNaN(t)) return;
+      const text = format(t);
+      if (label.textContent !== text) textSpan(label).textContent = text;
+    });
+  }, 60000);
   scan();
 })();
