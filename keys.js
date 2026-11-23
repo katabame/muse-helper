@@ -102,6 +102,8 @@
     KeyJ: latest,
     ArrowUp: () => step(-1),
     ArrowDown: () => step(1),
+    KeyS: () => M.search && M.search.toggle(),
+    KeyT: () => M.snippets && M.snippets.open(),
     KeyB: () => M.bookmarks && M.bookmarks.toggle(),
     Slash: help,
   };

@@ -12,7 +12,8 @@
   const SVG = 'http://www.w3.org/2000/svg';
   const STAR = 'M12 3.6l2.55 5.17 5.7.83-4.12 4.02.97 5.68L12 16.62l-5.1 2.68.97-5.68L3.75 9.6l5.7-.83z';
 
-  let marks = {}; // { [メッセージID]: { path, title, text, at, user, savedAt } }
+  let marks = {}; // { [メッセージID]: { path, title, text, at, user, savedAt, memo } }
+  let editing = null; // メモを編集中のブックマーク ID
   let loaded = false;
   let note = ''; // パネルに出す一時的なお知らせ
 
@@ -47,7 +48,14 @@
     #${PANEL} .bm-go { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 8px; }
     #${PANEL} .bm-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
     #${PANEL} .bm-meta { font-size: 11px; opacity: .6; }
+    #${PANEL} .bm-memo { margin-top: 2px; font-size: 12px; padding-left: 8px; border-left: 2px solid #c98500; word-break: break-word; white-space: pre-wrap; }
+    #${PANEL} .bm-memo-input { all: unset; box-sizing: border-box; display: block; width: 100%; margin: 4px 0 2px; padding: 4px 8px;
+      font-size: 12px; border: 1px solid rgba(128,128,128,.45); border-radius: 6px; }
+    #${PANEL} .bm-memo-input:focus { border-color: #2a78d6; }
+    #${PANEL} .bm-memo-hint { font-size: 11px; opacity: .55; }
     #${PANEL} .bm-del { width: 24px; height: 24px; margin: 6px 4px 0 0; display: grid; place-items: center; border-radius: 6px; opacity: 0; }
+    #${PANEL} .bm-actions { display: flex; margin: 6px 4px 0 0; }
+    #${PANEL} .bm-del { margin: 0; }
     #${PANEL} .bm-item:hover .bm-del, #${PANEL} .bm-del:focus-visible { opacity: .6; }
     #${PANEL} .bm-del:hover { opacity: 1 !important; background: rgba(128,128,128,.18); }
   `;
@@ -60,6 +68,13 @@
     const p = document.createElementNS(SVG, 'path');
     p.setAttribute('d', STAR);
     svg.appendChild(p);
+    return svg;
+  }
+  function pencil() {
+    const svg = cross();
+    svg.firstChild.setAttribute('d', 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4');
+    svg.firstChild.setAttribute('stroke-width', '1.8');
+    svg.firstChild.setAttribute('stroke-linejoin', 'round');
     return svg;
   }
   function cross() {
@@ -170,6 +185,7 @@
   }
   function hide() {
     const p = panel();
+    editing = null;
     if (p) p.remove();
     note = '';
   }
@@ -210,7 +226,46 @@
         go.type = 'button';
         go.append(el('div', 'bm-text', b.text || '(本文なし)'),
           el('div', 'bm-meta', `${b.at ? M.when(b.at, fmt12, true) : '時刻不明'} ・ ${b.user ? '自分' : '相手'}`));
+        if (b.memo && editing !== b.id) go.appendChild(el('div', 'bm-memo', b.memo));
         go.addEventListener('click', () => jump(b.id));
+        if (editing === b.id) {
+          // メモの編集(Enter で保存、Esc で取り消し、欄の外を押しても保存)
+          const box = el('div', 'bm-go');
+          box.append(el('div', 'bm-text', b.text || '(本文なし)'));
+          const input = el('input', 'bm-memo-input');
+          input.type = 'text';
+          input.maxLength = 200;
+          input.value = b.memo || '';
+          input.placeholder = 'メモ(例: あとで聞き直す)';
+          input.setAttribute('aria-label', 'メモ');
+          const commit = (keep) => {
+            if (editing !== b.id) return;
+            editing = null;
+            if (keep && marks[b.id]) {
+              const v = input.value.trim();
+              if (v) marks[b.id].memo = v; else delete marks[b.id].memo;
+              save();
+            }
+            render();
+          };
+          input.addEventListener('keydown', (e) => {
+            if (e.isComposing || e.keyCode === 229) return;
+            if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); commit(false); }
+          });
+          input.addEventListener('blur', () => commit(true));
+          box.append(input, el('div', 'bm-memo-hint', 'Enter で保存 ・ Esc で取り消し'));
+          row.append(box);
+          body.appendChild(row);
+          setTimeout(() => input.focus());
+          continue;
+        }
+        const edit = el('button', 'bm-del');
+        edit.type = 'button';
+        edit.setAttribute('aria-label', b.memo ? 'メモを編集' : 'メモを追加');
+        edit.title = b.memo ? 'メモを編集' : 'メモを追加';
+        edit.appendChild(pencil());
+        edit.addEventListener('click', () => { editing = b.id; render(); });
         const del = el('button', 'bm-del');
         del.type = 'button';
         del.setAttribute('aria-label', 'ブックマークを削除');
@@ -222,7 +277,9 @@
           ensure();
           render();
         });
-        row.append(go, del);
+        const actions = el('div', 'bm-actions');
+        actions.append(edit, del);
+        row.append(go, actions);
         body.appendChild(row);
       }
     }
@@ -265,7 +322,7 @@
   }
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && panel()) {
+    if (e.key === 'Escape' && panel() && !(e.target && e.target.classList && e.target.classList.contains('bm-memo-input'))) {
       e.stopPropagation();
       hide();
     }

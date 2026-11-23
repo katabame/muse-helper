@@ -206,9 +206,31 @@ globalThis.MuseHelper = (() => {
     { code: 'KeyJ', key: 'J', title: '最新のメッセージへ' },
     { code: 'ArrowUp', key: '↑', title: '前のメッセージへ', sub: '入力欄に文章があるときは、入力欄の中の移動になります' },
     { code: 'ArrowDown', key: '↓', title: '次のメッセージへ', sub: '入力欄に文章があるときは、入力欄の中の移動になります' },
+    { code: 'KeyS', key: 'S', title: '会話内を検索' },
+    { code: 'KeyT', key: 'T', title: '定型文を挿入' },
     { code: 'KeyB', key: 'B', title: 'ブックマークの一覧を開く/閉じる' },
     { code: 'Slash', key: '/', title: 'ショートカットの一覧を表示' },
   ];
+
+  // 入力欄のカーソル位置に文字を入れる(execCommand なら元に戻す(⌘Z)が効き、input イベントで Muse 側にも伝わる)
+  function insertText(t, text) {
+    t.focus();
+    let ok = false;
+    try { ok = document.execCommand('insertText', false, text); } catch (e) {}
+    if (!ok) {
+      const { selectionStart: s, selectionEnd: e, value } = t;
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(t, value.slice(0, s) + text + value.slice(e));
+      t.setSelectionRange(s + text.length, s + text.length);
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  // 日付のキー「2026-11-24」(端末の時刻で)
+  const dayKey = (t) => {
+    const d = new Date(t);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
 
   let VERSION = '';
   try { VERSION = chrome.runtime.getManifest().version; } catch (e) {}
@@ -232,6 +254,11 @@ globalThis.MuseHelper = (() => {
     HISTORY_KEY: 'museUsageHistory', // [{ used, at }, ...] 使用率の記録(直近ペースの計算用)
     BOOKMARKS_KEY: 'museBookmarks', // { [メッセージID]: { path, title, text, at, user, savedAt } }
     SHORTCUTS_KEY: 'museShortcuts', // false ならキーボードショートカットを使わない(既定は使う)
+    RESET_NOTIFY_KEY: 'museNotifyReset', // false ならリセットの通知を出さない(既定は通知)
+    REPLY_NOTIFY_KEY: 'museNotifyReply', // false なら返信の通知を出さない(既定は通知)
+    REPLY_PREVIEW_KEY: 'museNotifyReplyPreview', // true なら返信の通知に本文の冒頭を出す(既定は出さない)
+    SNIPPETS_KEY: 'museSnippets', // [{ id, title, text }] 定型文
+    ACTIVITY_KEY: 'museActivity', // { days: { 'YYYY-MM-DD': { sent, recv, sentChars, recvChars } }, ids: [...] } 利用の記録
     API_LATEST: `https://api.github.com/repos/${REPO}/releases/latest`,
     RELEASES_URL: `https://github.com/${REPO}/releases/latest`,
 
@@ -255,7 +282,7 @@ globalThis.MuseHelper = (() => {
     HOUR, DAY, WEEK,
     resetDate, forecast, severity, when, projText,
     composerInput, composerLayout, charCount,
-    messages, messageText, scrollToMessage, duration, ALT, SHORTCUTS,
+    messages, messageText, scrollToMessage, duration, ALT, SHORTCUTS, insertText, dayKey, OWN_IN_MESSAGE,
     SEVERITY_COLOR: ['#16a34a', '#d97706', '#dc2626'], // 設定画面(明暗どちらでも読める濃さ)
     fmt12: () => document.documentElement.getAttribute('data-muse-ts-format') === '12',
     signed(n, digits = 0) {

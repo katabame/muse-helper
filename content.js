@@ -391,7 +391,7 @@
   // ---------- 起動 ----------
   let timer;
   // Muse Helper が自分で足した部品の中の変化には反応しない
-  const OWN = '#muse-usage-badge, .muse-helper-pane, .muse-helper-nav, .muse-ts-label, .muse-date-sep, #muse-helper-counter, #muse-helper-draft-chip, .muse-bm-btn, #muse-helper-bookmarks, #muse-helper-keys-help';
+  const OWN = '#muse-usage-badge, .muse-helper-pane, .muse-helper-nav, .muse-ts-label, .muse-date-sep, #muse-helper-counter, #muse-helper-draft-chip, .muse-bm-btn, #muse-helper-bookmarks, #muse-helper-keys-help, #muse-helper-search, #muse-helper-snippets';
   const isOwn = (n) => {
     const e = n && (n.nodeType === 1 ? n : n.parentElement);
     return !!(e && e.closest(OWN));

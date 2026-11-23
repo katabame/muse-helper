@@ -31,7 +31,18 @@
     [MuseHelper.RESP_TIME_KEY]: true,
     [MuseHelper.NOTIFY_KEY]: true,
     [MuseHelper.SHORTCUTS_KEY]: true,
+    [MuseHelper.RESET_NOTIFY_KEY]: true,
+    [MuseHelper.REPLY_NOTIFY_KEY]: true,
+    [MuseHelper.REPLY_PREVIEW_KEY]: false,
   };
+  const PREF_DEFAULTS = { ...prefs };
+  const prefValue = (k, v) => (typeof v === 'boolean' ? v : PREF_DEFAULTS[k]);
+  let snippets = []; // 定型文 [{ id, title, text }]
+  let snippetEditing = null; // 編集中の定型文の ID('new' は追加)
+  let snippetConfirm = { id: null, until: 0 }; // 削除の確認待ち
+  let activity = null; // 利用の記録 { days: { 'YYYY-MM-DD': { sent, recv, sentChars, recvChars } } }
+  let pendingImport = null; // 読み込み待ちのバックアップ { name, data, exportedAt }
+  let backupStatus = '';
   let bookmarkCount = 0;
 
   // ---------- スタイル ----------
@@ -49,6 +60,20 @@
     /* 先週の線は2番目(オレンジ)。どちらのモードも検証スクリプトで確認済み */
     .${PANE} .muse-helper-chart { --muse-helper-series: #2a78d6; --muse-helper-prev: #eb6834; --muse-helper-surface: #fcfcfb; }
     html.dark .${PANE} .muse-helper-chart { --muse-helper-series: #3987e5; --muse-helper-prev: #d95926; --muse-helper-surface: #1a1a19; }
+    .${PANE} .muse-helper-act-chart { --muse-helper-series: #2a78d6; --muse-helper-surface: #fcfcfb; }
+    html.dark .${PANE} .muse-helper-act-chart { --muse-helper-series: #3987e5; --muse-helper-surface: #1a1a19; }
+    /* 入力欄とボタン(定型文・バックアップ) */
+    .${PANE} .muse-helper-field { box-sizing: border-box; width: 100%; padding: 6px 10px; font: inherit; color: inherit; background: transparent;
+      border: 1px solid rgba(128,128,128,.4); border-radius: 8px; outline: none; }
+    .${PANE} .muse-helper-field:focus { border-color: #2a78d6; }
+    .${PANE} textarea.muse-helper-field { resize: vertical; min-height: 84px; line-height: 1.5; }
+    .${PANE} .muse-helper-btn { box-sizing: border-box; padding: 4px 12px; border-radius: 8px; font: inherit; cursor: pointer;
+      color: inherit; background: rgba(128,128,128,.14); border: none; }
+    .${PANE} .muse-helper-btn:hover { background: rgba(128,128,128,.24); }
+    .${PANE} .muse-helper-btn.primary { color: #fff; background: #2a78d6; }
+    .${PANE} .muse-helper-btn.primary:hover { background: #2368bd; }
+    .${PANE} .muse-helper-btn.danger { color: #dc2626; }
+    .${PANE} .muse-helper-btn:focus-visible, .${PANE} .muse-helper-field:focus-visible { outline: 2px solid #2a78d6; outline-offset: 1px; }
     /* オン/オフのスイッチ */
     .${PANE} [role="switch"] { cursor: pointer; }
     .muse-helper-switch { position: relative; width: 40px; height: 24px; border-radius: 12px; flex: none;
@@ -133,6 +158,7 @@
 
     const body = el('div', 'space-y-6 pb-4 px-6');
     body.appendChild(buildPaceSection());
+    body.appendChild(buildActivitySection());
     body.appendChild(buildStatsSection());
     body.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', 'メッセージの時刻'));
 
@@ -158,11 +184,13 @@
       { value: 'enter', title: 'Enter で送信', example: 'Muse の標準の動き(Shift+Enter で改行)' },
       { value: 'mod-enter', title: 'Ctrl/⌘+Enter で送信', example: 'Enter で改行します。長い文章を書くときの誤送信を防げます' },
     ], setSendKey));
+    body.appendChild(buildSnippetsSection());
     body.appendChild(buildShortcutsSection());
     body.appendChild(buildBookmarksSection());
 
     body.appendChild(buildNotifySection());
     body.appendChild(buildDraftsSection());
+    body.appendChild(buildBackupSection());
     body.appendChild(buildUpdateSection());
     body.appendChild(buildDevSection());
 
@@ -327,7 +355,7 @@
     return r;
   }
   function syncPrefs(pane) {
-    pane.querySelectorAll('[data-pref]').forEach((r) => r.setAttribute('aria-checked', String(prefs[r.dataset.pref] !== false)));
+    pane.querySelectorAll('[data-pref]').forEach((r) => r.setAttribute('aria-checked', String(!!prefs[r.dataset.pref])));
   }
 
   function setSendKey(v) {
@@ -463,6 +491,359 @@
     if (num) num.textContent = `${bookmarkCount}件`;
   }
 
+  // ---------- 利用の記録(日ごとのメッセージ数) ----------
+  function buildActivitySection() {
+    const wrap = el('div', 'space-y-1.5');
+    wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', '利用の記録'));
+    const card = el('div', 'muse-helper-activity bg-fill-secondary-elevated rounded-16 p-1.5');
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  function syncActivity(pane) {
+    const card = pane.querySelector('.muse-helper-activity');
+    if (!card) return;
+    const M = MuseHelper, fmt12 = tsFormat === '12';
+    const days = (activity && activity.days) || {};
+    const sig = JSON.stringify([days, fmt12, M.dayKey(Date.now())]);
+    if (card.dataset.sig === sig) return;
+    card.dataset.sig = sig;
+    const wasOpen = !!card.querySelector('details[open]');
+    card.textContent = '';
+    const keys = Object.keys(days).sort();
+    if (!keys.length) {
+      const r = row();
+      r.appendChild(texts('まだ記録がありません', 'muse.ai を開いている間に送ったメッセージと届いた返信を、日ごとに数えます'));
+      card.appendChild(r);
+      return;
+    }
+    // 直近28日(今日を含む)
+    const today = new Date();
+    const list = [];
+    for (let i = 27; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+      const k = M.dayKey(d.getTime());
+      list.push({ d, k, ...(days[k] || { sent: 0, recv: 0, sentChars: 0, recvChars: 0 }) });
+    }
+    const sum = (arr, f) => arr.reduce((a, b) => a + b[f], 0);
+    const n = (v) => v.toLocaleString();
+    const last7 = list.slice(-7), prev7 = list.slice(-14, -7);
+    const t = list[list.length - 1];
+    const rows = [
+      [`今日 送信 ${n(t.sent)}件 ・ 返信 ${n(t.recv)}件`, `送信した文字数 ${n(t.sentChars)}字`],
+      [`直近7日 送信 ${n(sum(last7, 'sent'))}件`, `その前の7日 ${n(sum(prev7, 'sent'))}件(${M.signed(sum(last7, 'sent') - sum(prev7, 'sent'))}件) ・ 返信 ${n(sum(last7, 'recv'))}件`],
+      [`直近28日 送信 ${n(sum(list, 'sent'))}件`, `1日平均 ${(sum(list, 'sent') / 28).toFixed(1)}件 ・ 送信した文字数 ${n(sum(list, 'sentChars'))}字`],
+    ];
+    rows.forEach(([a, b], i) => {
+      if (i) card.appendChild(divider());
+      const r = row();
+      r.appendChild(texts(a, b));
+      card.appendChild(r);
+    });
+    card.appendChild(divider());
+    const box = el('div', 'muse-helper-act-chart px-3 pt-2 pb-1');
+    card.appendChild(box);
+    renderActivityChart(box, list, fmt12, wasOpen);
+    const first = keys[0].split('-');
+    const foot = row();
+    foot.appendChild(texts('', `${Number(first[1])}/${Number(first[2])} から記録しています。muse.ai を開いているタブで、新しく送った・届いたメッセージを数えます`));
+    foot.querySelector('.text-subheadline').remove();
+    card.appendChild(foot);
+  }
+
+  // 日ごとの送信数の棒グラフ(1系列なので凡例なし。マウスを乗せると値、表で見るで一覧)
+  function renderActivityChart(box, list, fmt12, wasOpen) {
+    const WD = ['日', '月', '火', '水', '木', '金', '土'];
+    const W = 560, H = 140, L = 30, R = 8, T = 10, B = 22;
+    const max = Math.max(...list.map((x) => x.sent));
+    const step = max <= 5 ? 1 : max <= 10 ? 2 : max <= 25 ? 5 : max <= 50 ? 10 : Math.ceil(max / 5 / 10) * 10;
+    const top = Math.max(step * Math.ceil(max / step), step * 2);
+    const slot = (W - L - R) / list.length;
+    const bw = Math.max(4, slot - 2); // 2px の間隔
+    const x = (i) => L + i * slot + (slot - bw) / 2;
+    const y = (v) => T + (1 - v / top) * (H - T - B);
+    const label = (d) => `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`;
+
+    const wrap = el('div', '');
+    wrap.style.cssText = 'position:relative;';
+    const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img',
+      'aria-label': `直近28日の送信数。合計 ${list.reduce((a, b) => a + b.sent, 0)}件、最多 ${max}件` });
+    svg.style.cssText = 'display:block;overflow:visible;font:10px system-ui,sans-serif;';
+    wrap.appendChild(svg);
+    box.appendChild(wrap);
+
+    const grid = s('g', { stroke: 'currentColor', 'stroke-opacity': '0.12', 'stroke-width': '1' }, svg);
+    for (const v of [0, top / 2, top]) {
+      s('line', { x1: L, x2: W - R, y1: y(v), y2: y(v) }, grid);
+      const t = s('text', { x: L - 6, y: y(v) + 3.5, 'text-anchor': 'end', fill: 'currentColor', 'fill-opacity': '0.6' }, svg);
+      t.textContent = String(v);
+    }
+    list.forEach((p, i) => {
+      if ((list.length - 1 - i) % 7) return; // 今日から7日おきに日付
+      const t = s('text', { x: x(i) + bw / 2, y: H - B + 14, 'text-anchor': 'middle', fill: 'currentColor', 'fill-opacity': '0.6' }, svg);
+      t.textContent = i === list.length - 1 ? '今日' : `${p.d.getMonth() + 1}/${p.d.getDate()}`;
+    });
+    // 棒(上の角だけ 4px の丸み。0件は描かない)
+    const series = 'var(--muse-helper-series)';
+    const bars = list.map((p, i) => {
+      if (!p.sent) return null;
+      const x0 = x(i), y0 = y(p.sent), y1 = y(0), r = Math.min(4, bw / 2, y1 - y0);
+      return s('path', { d: `M${x0},${y1} V${y0 + r} Q${x0},${y0} ${x0 + r},${y0} H${x0 + bw - r} Q${x0 + bw},${y0} ${x0 + bw},${y0 + r} V${y1} Z`, fill: series }, svg);
+    });
+
+    const tip = el('div', 'text-caption-1 text-text-primary');
+    tip.style.cssText = 'position:absolute;top:0;pointer-events:none;display:none;white-space:nowrap;padding:4px 8px;border-radius:8px;' +
+      'background:var(--muse-helper-surface);box-shadow:0 1px 6px rgba(0,0,0,.25);';
+    wrap.appendChild(tip);
+    const hit = s('rect', { x: L, y: T, width: W - L - R, height: H - T - B, fill: 'transparent' }, svg);
+    hit.addEventListener('pointermove', (e) => {
+      const r = svg.getBoundingClientRect();
+      const px = ((e.clientX - r.left) / r.width) * W;
+      const i = Math.max(0, Math.min(list.length - 1, Math.floor((px - L) / slot)));
+      const p = list[i];
+      bars.forEach((b, j) => b && b.setAttribute('fill-opacity', j === i ? '1' : '0.55'));
+      tip.textContent = '';
+      tip.append(`${label(p.d)} `, el('b', '', `送信 ${p.sent}件`), ` ・ 返信 ${p.recv}件 ・ ${p.sentChars.toLocaleString()}字`);
+      tip.style.display = 'block';
+      const left = ((x(i) + bw / 2) / W) * r.width;
+      tip.style.left = `${Math.min(Math.max(0, left - tip.offsetWidth / 2), r.width - tip.offsetWidth)}px`;
+    });
+    hit.addEventListener('pointerleave', () => {
+      bars.forEach((b) => b && b.removeAttribute('fill-opacity'));
+      tip.style.display = 'none';
+    });
+
+    const details = el('details', 'text-caption-1 text-text-secondary');
+    details.style.cssText = 'margin-top:4px;';
+    const summary = el('summary', '', '表で見る(直近28日)');
+    summary.style.cursor = 'pointer';
+    details.appendChild(summary);
+    const table = el('table', '');
+    table.style.cssText = 'margin-top:4px;border-collapse:collapse;font-variant-numeric:tabular-nums;';
+    const head = el('tr', '');
+    ['日付', '送信', '返信', '送信した文字数'].forEach((h, i) => {
+      const th = el('th', '', h);
+      th.style.cssText = `padding:1px ${i ? '0 1px 16px' : '16px 1px 0'};font-weight:normal;text-align:${i ? 'right' : 'left'};`;
+      head.appendChild(th);
+    });
+    table.appendChild(head);
+    [...list].reverse().forEach((p) => {
+      const tr = el('tr', '');
+      [label(p.d), `${p.sent}件`, `${p.recv}件`, `${p.sentChars.toLocaleString()}字`].forEach((v, i) => {
+        const td = el('td', i === 1 ? 'text-text-primary' : '', v);
+        td.style.cssText = `padding:1px ${i ? '0 1px 16px' : '16px 1px 0'};text-align:${i ? 'right' : 'left'};`;
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    });
+    details.appendChild(table);
+    details.open = wasOpen;
+    box.appendChild(details);
+  }
+
+  // ---------- 定型文 ----------
+  function buildSnippetsSection() {
+    const wrap = el('div', 'space-y-1.5');
+    wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', '定型文'));
+    wrap.appendChild(el('div', 'muse-helper-snippets bg-fill-secondary-elevated rounded-16 p-1.5'));
+    return wrap;
+  }
+
+  function saveSnippets(next) {
+    snippets = next;
+    try { chrome.storage.local.set({ [MuseHelper.SNIPPETS_KEY]: snippets }); } catch (e) {}
+    document.querySelectorAll('.' + PANE).forEach(syncSnippets);
+  }
+
+  function snippetForm(sn) {
+    const f = el('div', 'flex flex-col gap-2 px-3 py-2');
+    const title = el('input', 'muse-helper-field');
+    title.type = 'text';
+    title.maxLength = 60;
+    title.placeholder = '名前(例: 要約のお願い)';
+    title.setAttribute('aria-label', '定型文の名前');
+    title.value = sn ? sn.title : '';
+    const text = el('textarea', 'muse-helper-field');
+    text.placeholder = '挿入する文章';
+    text.setAttribute('aria-label', '挿入する文章');
+    text.value = sn ? sn.text : '';
+    const btns = el('div', 'flex gap-2 justify-end');
+    const cancel = el('button', 'muse-helper-btn', 'キャンセル');
+    const ok = el('button', 'muse-helper-btn primary', '保存');
+    cancel.type = ok.type = 'button';
+    cancel.addEventListener('click', () => { snippetEditing = null; document.querySelectorAll('.' + PANE).forEach(syncSnippets); });
+    ok.addEventListener('click', () => {
+      const v = { title: title.value.trim(), text: text.value };
+      if (!v.text.trim()) return text.focus();
+      snippetEditing = null;
+      if (sn) saveSnippets(snippets.map((x) => (x.id === sn.id ? { ...x, ...v } : x)));
+      else saveSnippets([...snippets, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...v }]);
+    });
+    btns.append(cancel, ok);
+    f.append(title, text, btns);
+    setTimeout(() => (sn ? text : title).focus());
+    return f;
+  }
+
+  function syncSnippets(pane) {
+    const card = pane.querySelector('.muse-helper-snippets');
+    if (!card) return;
+    const confirming = snippetConfirm.until > Date.now() ? snippetConfirm.id : null;
+    const sig = JSON.stringify([snippets, snippetEditing, confirming]);
+    if (card.dataset.sig === sig) return; // 入力中に作り直さない
+    card.dataset.sig = sig;
+    card.textContent = '';
+    snippets.forEach((sn, i) => {
+      if (i) card.appendChild(divider());
+      if (snippetEditing === sn.id) return card.appendChild(snippetForm(sn));
+      const r = row();
+      r.appendChild(texts(sn.title || '(名前なし)', sn.text.replace(/\s+/g, ' ').slice(0, 80)));
+      const btns = el('div', 'flex gap-1 self-center ps-2');
+      const edit = el('button', 'muse-helper-btn', '編集');
+      const del = el('button', 'muse-helper-btn danger', confirming === sn.id ? 'もう一度押すと削除' : '削除');
+      edit.type = del.type = 'button';
+      edit.addEventListener('click', () => { snippetEditing = sn.id; document.querySelectorAll('.' + PANE).forEach(syncSnippets); });
+      del.addEventListener('click', () => {
+        if (confirming !== sn.id) {
+          snippetConfirm = { id: sn.id, until: Date.now() + 3000 };
+          document.querySelectorAll('.' + PANE).forEach(syncSnippets);
+          setTimeout(() => document.querySelectorAll('.' + PANE).forEach(syncSnippets), 3100);
+          return;
+        }
+        snippetConfirm = { id: null, until: 0 };
+        saveSnippets(snippets.filter((x) => x.id !== sn.id));
+      });
+      btns.append(edit, del);
+      r.appendChild(btns);
+      card.appendChild(r);
+    });
+    if (snippets.length) card.appendChild(divider());
+    if (snippetEditing === 'new') card.appendChild(snippetForm(null));
+    else {
+      card.appendChild(actionRow('muse-helper-snippet-add', 'button', '定型文を追加',
+        `会話の画面で ${MuseHelper.ALT}T を押すと一覧が出て、選ぶと入力欄に挿入します`, () => {
+          snippetEditing = 'new';
+          document.querySelectorAll('.' + PANE).forEach(syncSnippets);
+        }));
+    }
+  }
+
+  // ---------- バックアップ ----------
+  // muse で始まるキーをまとめて JSON に。アップデート確認の結果と通知済みの記録は含めない
+  const BACKUP_SKIP = [MuseHelper.UPDATE_KEY, MuseHelper.NOTIFIED_KEY];
+  const backupKey = (k) => /^muse/.test(k) && !BACKUP_SKIP.includes(k);
+
+  function buildBackupSection() {
+    const wrap = el('div', 'space-y-1.5');
+    wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', 'バックアップ'));
+    const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
+    card.appendChild(actionRow('muse-helper-backup-export', 'button', 'ファイルに書き出す',
+      '設定・使用率の記録・下書き・ブックマーク・定型文・利用の記録を JSON ファイルに保存します', exportBackup));
+    card.appendChild(divider());
+    const file = el('input', '');
+    file.type = 'file';
+    file.accept = 'application/json,.json';
+    file.style.display = 'none';
+    file.addEventListener('change', () => {
+      const f = file.files && file.files[0];
+      file.value = '';
+      if (f) readBackup(f);
+    });
+    card.appendChild(file);
+    card.appendChild(actionRow('muse-helper-backup-import', 'button', 'ファイルから読み込む',
+      '書き出したファイルを選ぶと、内容を確認してから読み込みます', () => file.click()));
+    // 読み込みの確認
+    const confirm = el('div', 'muse-helper-backup-confirm');
+    const cr = row();
+    cr.appendChild(texts('', '今の設定とデータは、ファイルの内容で上書きされます'));
+    cr.firstChild.querySelector('.text-subheadline').classList.add('muse-helper-backup-what');
+    const btns = el('div', 'flex gap-1 self-center ps-2');
+    const no = el('button', 'muse-helper-btn', 'やめる');
+    const yes = el('button', 'muse-helper-btn primary', '読み込む');
+    no.type = yes.type = 'button';
+    no.addEventListener('click', () => { pendingImport = null; backupStatus = ''; document.querySelectorAll('.' + PANE).forEach(syncBackup); });
+    yes.addEventListener('click', applyBackup);
+    btns.append(no, yes);
+    cr.appendChild(btns);
+    confirm.append(divider(), cr);
+    card.appendChild(confirm);
+    const status = row('muse-helper-backup-status');
+    status.appendChild(texts('', ''));
+    status.querySelector('.text-subheadline').remove();
+    card.appendChild(status);
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  function syncBackup(pane) {
+    const confirm = pane.querySelector('.muse-helper-backup-confirm');
+    if (!confirm) return;
+    confirm.style.display = pendingImport ? '' : 'none';
+    if (pendingImport) {
+      const d = pendingImport.exportedAt ? new Date(pendingImport.exportedAt) : null;
+      pane.querySelector('.muse-helper-backup-what').textContent = `「${pendingImport.name}」を読み込みますか？(${Object.keys(pendingImport.data).length}項目` +
+        (d && !isNaN(d) ? `、${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} に書き出し` : '') + ')';
+    }
+    const status = pane.querySelector('.muse-helper-backup-status');
+    status.style.display = backupStatus ? '' : 'none';
+    status.querySelector('.text-caption-1').textContent = backupStatus;
+  }
+
+  function exportBackup() {
+    try {
+      chrome.storage.local.get(null, (all) => {
+        const data = {};
+        for (const k of Object.keys(all || {})) if (backupKey(k)) data[k] = all[k];
+        const json = JSON.stringify({ app: 'muse-helper', version: MuseHelper.version(), exportedAt: new Date().toISOString(), data }, null, 2);
+        const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+        const a = el('a', '');
+        a.href = url;
+        a.download = `muse-helper-backup-${MuseHelper.dayKey(Date.now())}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        backupStatus = `書き出しました(${Object.keys(data).length}項目)`;
+        document.querySelectorAll('.' + PANE).forEach(syncBackup);
+      });
+    } catch (e) {
+      backupStatus = `書き出せませんでした: ${(e && e.message) || e}`;
+      document.querySelectorAll('.' + PANE).forEach(syncBackup);
+    }
+  }
+
+  async function readBackup(f) {
+    pendingImport = null;
+    try {
+      const j = JSON.parse(await f.text());
+      if (!j || j.app !== 'muse-helper' || !j.data || typeof j.data !== 'object') throw new Error('Muse Helper のバックアップファイルではありません');
+      const data = {};
+      for (const k of Object.keys(j.data)) if (backupKey(k)) data[k] = j.data[k];
+      if (!Object.keys(data).length) throw new Error('読み込める項目がありません');
+      pendingImport = { name: f.name, data, exportedAt: j.exportedAt };
+      backupStatus = '';
+    } catch (e) {
+      backupStatus = `読み込めませんでした: ${(e && e.message) || e}`;
+    }
+    document.querySelectorAll('.' + PANE).forEach(syncBackup);
+  }
+
+  function applyBackup() {
+    if (!pendingImport) return;
+    const n = Object.keys(pendingImport.data).length;
+    try {
+      chrome.storage.local.set(pendingImport.data, () => {
+        backupStatus = chrome.runtime.lastError ? `読み込めませんでした: ${chrome.runtime.lastError.message}`
+          : `読み込みました(${n}項目)。ほかの muse.ai のタブは再読み込みすると反映されます`;
+        document.querySelectorAll('.' + PANE).forEach(syncBackup);
+      });
+    } catch (e) {
+      backupStatus = `読み込めませんでした: ${(e && e.message) || e}`;
+    }
+    pendingImport = null;
+    document.querySelectorAll('.' + PANE).forEach(syncBackup);
+  }
+
   // ---------- 通知 ----------
   function buildNotifySection() {
     const wrap = el('div', 'space-y-1.5');
@@ -470,6 +851,15 @@
     const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
     card.appendChild(prefSwitch(MuseHelper.NOTIFY_KEY, '使用率の通知',
       `残りが${MuseHelper.NOTIFY_LOW}%以下になったときと、リセット前に上限に達しそうなときに通知します(週に1回ずつ)`));
+    card.appendChild(divider());
+    card.appendChild(prefSwitch(MuseHelper.RESET_NOTIFY_KEY, 'リセットの通知',
+      '週の使用率がリセットされたら通知します(muse.ai を閉じていても届きます。正確なリセット日時が分かっているときだけ)'));
+    card.appendChild(divider());
+    card.appendChild(prefSwitch(MuseHelper.REPLY_NOTIFY_KEY, '返信の通知',
+      '別のタブやアプリを見ている間に相手の返信が届いたら通知します。通知を押すとそのタブを開きます'));
+    card.appendChild(divider());
+    card.appendChild(prefSwitch(MuseHelper.REPLY_PREVIEW_KEY, '返信の通知に本文の冒頭を表示',
+      'オフのときは「返信が届きました」とだけ表示します(通知は画面の端や通知センターに残ります)'));
     card.appendChild(divider());
     const test = actionRow('muse-helper-notify-test', 'button', 'テスト通知を送る', '通知が表示されるか確かめます', () => {
       const sub = test.querySelector('.text-caption-1');
@@ -1007,6 +1397,9 @@
     syncPrefs(pane);
     syncBookmarks(pane);
     syncStats(pane);
+    syncSnippets(pane);
+    syncActivity(pane);
+    syncBackup(pane);
     pane.querySelectorAll('[role="radio"]').forEach((r) => {
       const cur = { mode: tsMode, format: tsFormat, sendkey: sendKey }[r.dataset.group];
       r.setAttribute('aria-checked', String(r.dataset.value === cur));
@@ -1084,9 +1477,11 @@
 
   try {
     chrome.storage.local.get([TS_FMT_KEY, TS_MODE_KEY, MuseHelper.UPDATE_KEY, MuseHelper.USAGE_KEY, MuseHelper.HISTORY_KEY, MuseHelper.PACE_BADGE_KEY,
-      MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY, MuseHelper.DEV_MODE_KEY, MuseHelper.SEND_KEY_KEY, MuseHelper.BOOKMARKS_KEY, ...Object.keys(prefs)], (v) => {
+      MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY, MuseHelper.DEV_MODE_KEY, MuseHelper.SEND_KEY_KEY, MuseHelper.BOOKMARKS_KEY, MuseHelper.SNIPPETS_KEY, MuseHelper.ACTIVITY_KEY, ...Object.keys(prefs)], (v) => {
       bookmarkCount = Object.keys((v && v[MuseHelper.BOOKMARKS_KEY]) || {}).length;
-      for (const k of Object.keys(prefs)) prefs[k] = !(v && v[k] === false);
+      for (const k of Object.keys(prefs)) prefs[k] = prefValue(k, v && v[k]);
+      snippets = (v && Array.isArray(v[MuseHelper.SNIPPETS_KEY]) && v[MuseHelper.SNIPPETS_KEY]) || [];
+      activity = (v && v[MuseHelper.ACTIVITY_KEY]) || null;
       sendKey = v && v[MuseHelper.SEND_KEY_KEY] === 'mod-enter' ? 'mod-enter' : 'enter';
       showPace = !(v && v[MuseHelper.PACE_BADGE_KEY] === false);
       draftsEnabled = !(v && v[MuseHelper.DRAFTS_ENABLED_KEY] === false);
@@ -1106,6 +1501,14 @@
         if (changes[TS_MODE_KEY]) tsMode = normMode(changes[TS_MODE_KEY].newValue);
         document.querySelectorAll('.' + PANE).forEach(syncPane);
       }
+      if (area === 'local' && changes[MuseHelper.SNIPPETS_KEY]) {
+        snippets = changes[MuseHelper.SNIPPETS_KEY].newValue || [];
+        document.querySelectorAll('.' + PANE).forEach(syncSnippets);
+      }
+      if (area === 'local' && changes[MuseHelper.ACTIVITY_KEY]) {
+        activity = changes[MuseHelper.ACTIVITY_KEY].newValue || null;
+        document.querySelectorAll('.' + PANE).forEach(syncActivity);
+      }
       if (area === 'local' && changes[MuseHelper.BOOKMARKS_KEY]) {
         bookmarkCount = Object.keys(changes[MuseHelper.BOOKMARKS_KEY].newValue || {}).length;
         document.querySelectorAll('.' + PANE).forEach(syncBookmarks);
@@ -1120,7 +1523,7 @@
         document.querySelectorAll('.' + PANE).forEach(syncDrafts);
       }
       if (area === 'local' && Object.keys(prefs).some((k) => changes[k])) {
-        for (const k of Object.keys(prefs)) if (changes[k]) prefs[k] = changes[k].newValue !== false;
+        for (const k of Object.keys(prefs)) if (changes[k]) prefs[k] = prefValue(k, changes[k].newValue);
         document.querySelectorAll('.' + PANE).forEach(syncPrefs);
       }
       if (area === 'local' && changes[MuseHelper.SEND_KEY_KEY]) {
