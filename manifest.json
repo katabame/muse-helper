@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Muse Helper (使用率 + タイムスタンプ)",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Muse (muse.ai) に、週間トークン残量(%)のバッジと、各メッセージの送信時刻を表示します。",
   "permissions": ["storage", "alarms"],
   "host_permissions": ["https://api.github.com/*"],

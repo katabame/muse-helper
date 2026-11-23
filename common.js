@@ -8,13 +8,24 @@ globalThis.MuseHelper = (() => {
     return String(v || '').replace(/^v/i, '').split(/[.+-]/).slice(0, 4).map((x) => parseInt(x, 10) || 0);
   }
 
+  // 拡張機能を再読み込み・更新すると、開いていたタブの content script は切り離され、
+  // chrome.runtime の呼び出しが "Extension context invalidated" で失敗する。
+  // バージョンは読み込み時に一度だけ取得しておく。
+  let VERSION = '';
+  try { VERSION = chrome.runtime.getManifest().version; } catch (e) {}
+
   return {
     REPO,
     UPDATE_KEY: 'museUpdate', // { latest, url, etag, checkedAt, error }
     API_LATEST: `https://api.github.com/repos/${REPO}/releases/latest`,
     RELEASES_URL: `https://github.com/${REPO}/releases/latest`,
 
-    version: () => chrome.runtime.getManifest().version,
+    version: () => VERSION,
+
+    // 拡張機能との接続が生きているか(false なら chrome.* API は使えない)
+    alive() {
+      try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; }
+    },
 
     // tag が current より新しいか
     isNewer(tag, current) {

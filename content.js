@@ -124,6 +124,14 @@
 
   function render() {
     if (!el) build();
+    if (!MuseHelper.alive()) {
+      // 拡張機能が再読み込み・更新された後の古いスクリプト。表示はそのまま残し、再読み込みを促す。
+      upd.style.display = 'none';
+      warn.textContent = '⚠ 拡張機能が更新されました — ページを再読み込みしてください';
+      warn.style.display = 'block';
+      el.style.borderColor = '#fbbf24';
+      return;
+    }
     renderUpdate();
     if (!state) {
       big.textContent = 'Muse: 未取得';

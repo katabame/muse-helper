@@ -253,6 +253,7 @@
   }
 
   function inject() {
+    if (!MuseHelper.alive()) return; // 切り離された古いスクリプトでは何もしない
     const s = findSettings();
     if (!s) return;
     if (!s.right.hasAttribute(RIGHT)) s.right.setAttribute(RIGHT, '');
