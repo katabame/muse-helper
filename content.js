@@ -45,7 +45,7 @@
   }
 
   // ---------- 表示 ----------
-  let el, big, small, dragging = null;
+  let el, big, small, warn, dragging = null;
 
   function build() {
     el = document.createElement('div');
@@ -61,7 +61,9 @@
     big.style.cssText = 'font-size:15px;font-weight:700;white-space:nowrap';
     small = document.createElement('div');
     small.style.cssText = 'opacity:.75;font-size:11px;white-space:nowrap';
-    el.append(big, small);
+    warn = document.createElement('div');
+    warn.style.cssText = 'margin-top:3px;font-size:11px;font-weight:600;color:#fbbf24;white-space:nowrap;display:none';
+    el.append(big, small, warn);
     document.documentElement.appendChild(el);
 
     // ドラッグで移動(位置は保存)
@@ -93,11 +95,25 @@
     return h < 24 ? `${h}時間前` : `${Math.floor(h / 24)}日前`;
   }
 
+  // 「11月24日」→ 今日から何日後か(過ぎていれば負)。年は近い方を採用する。
+  function daysUntil(md) {
+    const m = md.match(/(\d{1,2})月(\d{1,2})日/);
+    if (!m) return null;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let d = new Date(now.getFullYear(), Number(m[1]) - 1, Number(m[2]));
+    const DAY = 86400000;
+    if (d - today < -180 * DAY) d = new Date(now.getFullYear() + 1, d.getMonth(), d.getDate());
+    else if (d - today > 180 * DAY) d = new Date(now.getFullYear() - 1, d.getMonth(), d.getDate());
+    return Math.round((d - today) / DAY);
+  }
+
   function render() {
     if (!el) build();
     if (!state) {
       big.textContent = 'Muse: 未取得';
       small.textContent = '設定画面を開くと取得します';
+      warn.style.display = 'none';
       el.style.borderColor = 'rgba(255,255,255,.18)';
       return;
     }
@@ -109,15 +125,33 @@
     a.textContent = `残り ${remain}%`;
     a.style.color = color;
     const b = document.createElement('span');
-    b.textContent = `  (使用 ${state.used}%)`;
+    b.textContent = `  (${state.used}% 使用済)`;
     b.style.cssText = 'font-weight:400;font-size:11px;opacity:.8';
     big.append(a, b);
 
+    const days = state.reset ? daysUntil(state.reset) : null;
+    const resetPassed = days != null && days < 0;
+    const stale = age > STALE_MS;
+
     const parts = [];
-    if (state.reset) parts.push(`${state.reset}リセット`);
-    parts.push(age > STALE_MS ? `⚠ ${ago(age)}の値` : ago(age) + '更新');
+    if (state.reset) {
+      const rest = days == null ? '' : days > 0 ? `(あと${days}日)` : days === 0 ? '(今日)' : '(済)';
+      parts.push(`${state.reset}リセット${rest}`);
+    }
+    if (!stale) parts.push(ago(age) + '更新');
     small.textContent = parts.join(' ・ ');
-    el.style.borderColor = color;
+
+    // 古い値は別の行で目立たせる
+    if (resetPassed || stale) {
+      warn.textContent = resetPassed
+        ? '⚠ リセット後の値は未取得 — 設定画面で更新'
+        : `⚠ ${ago(age)}の値 — 設定画面で更新`;
+      warn.style.display = 'block';
+    } else {
+      warn.style.display = 'none';
+    }
+    el.style.borderColor = stale || resetPassed ? '#fbbf24' : color;
+    el.style.opacity = stale || resetPassed ? '.85' : '1';
     el.title =
       `${state.label || '週間使用量'}\n` +
       (state.extra ? `追加トークン: 残り${state.extra}\n` : '') +
