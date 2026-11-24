@@ -206,7 +206,7 @@
       { value: '125', title: '特大(125%)', example: 'メッセージを大きく表示します' },
     ], (v) => setLayout(MuseHelper.FONT_SCALE_KEY, Number(v))));
     const viewExtras = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
-    viewExtras.appendChild(prefSwitch(MuseHelper.COLLAPSE_KEY, '長いメッセージを折りたたむ(試験的)',
+    viewExtras.appendChild(prefSwitch(MuseHelper.COLLAPSE_KEY, '長いメッセージを折りたたむ',
       'とても長いメッセージを途中まで表示し、時刻の横の「全文を表示」で開きます。表示が崩れる場合はオフにしてください'));
     view.appendChild(viewExtras);
     body.appendChild(view);
