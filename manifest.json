@@ -3,7 +3,7 @@
   "name": "Muse Helper",
   "version": "0.7.1",
   "description": "Muse (muse.ai) の Web 版に、使い勝手をよくする機能を追加する拡張機能です。",
-  "permissions": ["storage", "alarms", "notifications"],
+  "permissions": ["storage", "unlimitedStorage", "alarms", "notifications"],
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

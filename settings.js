@@ -36,6 +36,7 @@
     [MuseHelper.REPLY_PREVIEW_KEY]: false,
     [MuseHelper.COLLAPSE_KEY]: false,
     [MuseHelper.SIDEBAR_BADGE_KEY]: true,
+    [MuseHelper.BOOKMARK_AUTOLOAD_KEY]: true,
   };
   let chatWidth = 'default'; // 本文の幅
   let fontScale = 100; // 文字の大きさ(%)
@@ -599,6 +600,9 @@
     card.appendChild(divider());
     card.appendChild(prefSwitch(MuseHelper.SIDEBAR_BADGE_KEY, 'サイドバーにブックマーク数を表示',
       'ブックマークがある会話の名前の横に「★2」のように件数を出します'));
+    card.appendChild(divider());
+    card.appendChild(prefSwitch(MuseHelper.BOOKMARK_AUTOLOAD_KEY, '過去のメッセージを自動で読み込んで移動',
+      'まだ読み込まれていないメッセージへ移動するとき、見つかるまで会話を上へ読み込みます。オフのときや見つからなかったときは、保存した全文を表示します'));
     wrap.appendChild(card);
     return wrap;
   }

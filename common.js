@@ -278,6 +278,7 @@ globalThis.MuseHelper = (() => {
     COLLAPSE_KEY: 'museCollapse', // true なら長いメッセージを折りたたむ(既定はオフ)
     BOOKMARK_SORT_KEY: 'museBookmarkSort', // 'chat'(会話ごと)| 'added'(追加した順)
     SIDEBAR_BADGE_KEY: 'museSidebarBadge', // false ならサイドバーの会話にブックマーク数を出さない(既定は出す)
+    BOOKMARK_AUTOLOAD_KEY: 'museBookmarkAutoLoad', // false なら読み込まれていないブックマークへ移動するとき過去のメッセージを自動で読み込まない(既定は読み込む)
     THREAD_NAMES_KEY: 'museThreadNames', // { [会話のパス]: サイドバーでの名前 } 開いたときに覚える(★の表示用)
     ACTIVITY_KEY: 'museActivity', // { days: { 'YYYY-MM-DD': { sent, recv, sentChars, recvChars } }, ids: [...] } 利用の記録
     API_LATEST: `https://api.github.com/repos/${REPO}/releases/latest`,
