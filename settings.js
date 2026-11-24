@@ -193,11 +193,13 @@
     body.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', '表示'));
     const view = el('div', 'flex flex-col gap-2');
     view.appendChild(radioCard('width', '本文の幅', [
+      { value: 'narrow', title: '狭い', example: '標準の約0.8倍' },
       { value: 'default', title: '標準', example: 'Muse の標準の幅' },
       { value: 'wide', title: '広い', example: '標準の約1.3倍' },
       { value: 'full', title: '画面いっぱい', example: 'ウィンドウの幅に合わせます' },
     ], (v) => setLayout(MuseHelper.CHAT_WIDTH_KEY, v)));
     view.appendChild(radioCard('scale', '文字の大きさ', [
+      { value: '80', title: '特小(80%)', example: 'メッセージを小さく表示します' },
       { value: '90', title: '小さめ(90%)', example: 'メッセージを少し小さく表示します' },
       { value: '100', title: '標準', example: 'Muse の標準の大きさ' },
       { value: '110', title: '大きめ(110%)', example: 'メッセージを少し大きく表示します' },
@@ -1698,8 +1700,8 @@
   // 表示・入力・ショートカット・以前の下書きの値を読み込む(partial: 変わったキーだけ)
   function applyLayoutValues(v, partial) {
     const has = (k) => !partial || k in v;
-    if (has(MuseHelper.CHAT_WIDTH_KEY)) chatWidth = ['wide', 'full'].includes(v[MuseHelper.CHAT_WIDTH_KEY]) ? v[MuseHelper.CHAT_WIDTH_KEY] : 'default';
-    if (has(MuseHelper.FONT_SCALE_KEY)) fontScale = [90, 110, 125].includes(v[MuseHelper.FONT_SCALE_KEY]) ? v[MuseHelper.FONT_SCALE_KEY] : 100;
+    if (has(MuseHelper.CHAT_WIDTH_KEY)) chatWidth = ['narrow', 'wide', 'full'].includes(v[MuseHelper.CHAT_WIDTH_KEY]) ? v[MuseHelper.CHAT_WIDTH_KEY] : 'default';
+    if (has(MuseHelper.FONT_SCALE_KEY)) fontScale = [80, 90, 110, 125].includes(v[MuseHelper.FONT_SCALE_KEY]) ? v[MuseHelper.FONT_SCALE_KEY] : 100;
     if (has(MuseHelper.LOW_CONFIRM_KEY)) lowConfirm = [0, 5, 20].includes(v[MuseHelper.LOW_CONFIRM_KEY]) ? v[MuseHelper.LOW_CONFIRM_KEY] : 10;
     if (has(MuseHelper.SHORTCUT_KEYS_KEY)) shortcutKeys = v[MuseHelper.SHORTCUT_KEYS_KEY] || {};
     if (has(MuseHelper.DRAFT_HISTORY_KEY)) draftHistory = v[MuseHelper.DRAFT_HISTORY_KEY] || {};

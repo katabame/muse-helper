@@ -9,7 +9,7 @@
   const LIMIT = 360; // 折りたたんだときの高さ(px)
   const MIN = LIMIT + 160; // これより高いメッセージだけ折りたたむ
   const BTN = 'muse-collapse-btn';
-  const WIDTH = { default: '', wide: '64rem', full: 'none' };
+  const WIDTH = { narrow: '38rem', default: '', wide: '64rem', full: 'none' };
 
   let width = 'default';
   let scale = 100;
@@ -19,7 +19,10 @@
   const style = document.createElement('style');
   const fixed = document.createElement('style');
   fixed.textContent = `
-    [data-muse-collapse="1"] > :not(.muse-ts-label) { max-height: ${LIMIT}px; overflow: hidden;
+    /* メッセージ要素は縦並びの flex。overflow: hidden を付けると本文が縮められて高さ 0 になり、
+       時刻ラベル(flex: 0 0 100%)がその分を埋めてしまうので、本文は縮めず、ラベルは中身の高さにする */
+    [data-muse-collapse="1"] > .muse-ts-label { flex-basis: auto !important; }
+    [data-muse-collapse="1"] > :not(.muse-ts-label) { max-height: ${LIMIT}px; overflow: hidden; flex-shrink: 0;
       -webkit-mask-image: linear-gradient(#000 calc(100% - 64px), transparent); mask-image: linear-gradient(#000 calc(100% - 64px), transparent); }
     .${BTN} { all: unset; box-sizing: border-box; pointer-events: auto; cursor: pointer; display: inline-flex; align-items: center; gap: 2px;
       vertical-align: -2px; margin: 0 2px 0 6px; padding: 1px 4px; border-radius: 4px; color: inherit; }
@@ -139,7 +142,7 @@
     const K = [M.CHAT_WIDTH_KEY, M.FONT_SCALE_KEY, M.COLLAPSE_KEY];
     const apply = (k, v) => {
       if (k === M.CHAT_WIDTH_KEY) width = WIDTH[v] !== undefined ? v : 'default';
-      if (k === M.FONT_SCALE_KEY) scale = [90, 100, 110, 125].includes(v) ? v : 100;
+      if (k === M.FONT_SCALE_KEY) scale = [80, 90, 100, 110, 125].includes(v) ? v : 100;
       if (k === M.COLLAPSE_KEY) collapse = v === true;
     };
     chrome.storage.local.get(K, (v) => {

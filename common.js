@@ -273,8 +273,8 @@ globalThis.MuseHelper = (() => {
     SHORTCUT_KEYS_KEY: 'museShortcutKeys', // { [ショートカットの id]: KeyboardEvent.code } 変更したキー
     DRAFT_HISTORY_KEY: 'museDraftHistory', // { [チャットのパス]: [{ text, at }] } 以前の下書き(新しい順、最大5件)
     LOW_CONFIRM_KEY: 'museLowConfirm', // 残りがこの % 以下なら送信前に確認する(0 でオフ。既定 10)
-    CHAT_WIDTH_KEY: 'museChatWidth', // 'default' | 'wide' | 'full' 本文の幅
-    FONT_SCALE_KEY: 'museFontScale', // 90 | 100 | 110 | 125 本文の文字の大きさ(%)
+    CHAT_WIDTH_KEY: 'museChatWidth', // 'narrow' | 'default' | 'wide' | 'full' 本文の幅
+    FONT_SCALE_KEY: 'museFontScale', // 80 | 90 | 100 | 110 | 125 本文の文字の大きさ(%)
     COLLAPSE_KEY: 'museCollapse', // true なら長いメッセージを折りたたむ(既定はオフ)
     BOOKMARK_SORT_KEY: 'museBookmarkSort', // 'chat'(会話ごと)| 'added'(追加した順)
     SIDEBAR_BADGE_KEY: 'museSidebarBadge', // false ならサイドバーの会話にブックマーク数を出さない(既定は出す)
