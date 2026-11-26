@@ -102,9 +102,19 @@
     return diff === 0 ? `今日 · ${ymd}` : diff === 1 ? `昨日 · ${ymd}` : ymd;
   }
 
+  // Muse 自身の時刻の見出し(メッセージの直前にある「0:07」「11月20日 2:11」のような中央寄せの行)。
+  // 日付の区切り線はこの見出しより上に置く(日付 → 時刻 → メッセージの順に読めるように)
+  function museTimeBefore(el) {
+    let p = el.previousElementSibling;
+    while (p && p.classList.contains(SEP_CLS)) p = p.previousElementSibling;
+    if (!p || p.hasAttribute('data-message-id') || p.querySelector('[data-message-id]')) return null;
+    const text = p.textContent.trim();
+    return p.classList.contains('text-center') && text.length < 30 && /\d:\d{2}/.test(text) ? p : null;
+  }
+
   // 日付の区切り線。
   // メッセージ要素の中に入れると、Muse が要素の高さを固定しているため中身があふれて次のメッセージに重なる。
-  // そこで、メッセージの列(親要素)の中で、そのメッセージの直前の兄弟として入れる(独立した1行として場所をとる)。
+  // そこで、メッセージの列(親要素)の中で、そのメッセージ(Muse の時刻の見出しがあればその見出し)の直前の兄弟として入れる(独立した1行として場所をとる)。
   // 区切り線には対象のメッセージ ID を記録し、Muse がメッセージを足して位置がずれたら付け直す。
   function setSeparator(el, t, show, keep) {
     // 以前の版(メッセージ要素の中に入れていた)の区切り線は消す
@@ -115,7 +125,8 @@
     let sep = [...el.parentElement.querySelectorAll(':scope > .' + SEP_CLS)].find((x) => x.dataset.for === id);
     keep.add(sep || null);
     const text = dayLabel(t);
-    if (sep && sep.nextElementSibling === el && sep.dataset.day === t.toDateString() && sep.textContent === text) return;
+    const anchor = museTimeBefore(el) || el; // この要素の直前に置く
+    if (sep && sep.nextElementSibling === anchor && sep.dataset.day === t.toDateString() && sep.textContent === text) return;
     if (!sep) {
       sep = document.createElement('div');
       sep.className = SEP_CLS;
@@ -131,7 +142,7 @@
     }
     sep.dataset.for = id;
     keep.add(sep);
-    if (sep.nextElementSibling !== el) el.parentElement.insertBefore(sep, el);
+    if (sep.nextElementSibling !== anchor) el.parentElement.insertBefore(sep, anchor);
     sep.dataset.day = t.toDateString();
     sep.children[1].textContent = text;
   }
