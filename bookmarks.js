@@ -535,6 +535,7 @@
 
   function open() {
     if (panel()) return render();
+    if (M.draftList) M.draftList.hide(); // 同じ場所に出るので、下書きの一覧は閉じる
     const p = el('div');
     p.id = PANEL;
     p.setAttribute('role', 'region');
@@ -776,25 +777,10 @@
     // 別の会話: Muse(Next.js)の画面の切り替えで移動し(再読み込みしない)、メッセージが出るのを待つ。
     // 切り替えが使えなければ、ページを読み込み直して移動する
     hide();
-    navigate(b.path).then((ok) => {
+    M.navigate(b.path).then((ok) => {
       if (ok) return waitAndScroll(id);
       try { sessionStorage.setItem(JUMP, id); } catch (e) {}
       location.assign(b.path);
-    });
-  }
-
-  // nav-main.js(MAIN world)に画面の切り替えを頼む。1秒以内に返事がなければ失敗とみなす
-  function navigate(path) {
-    return new Promise((resolve) => {
-      const reqId = Math.random().toString(36).slice(2);
-      const done = (ok) => { window.removeEventListener('message', onMsg); clearTimeout(timer); resolve(ok); };
-      const onMsg = (e) => {
-        const m = e.data;
-        if (e.source === window && m && m.source === 'muse-helper' && m.type === 'navigate-result' && m.id === reqId) done(!!m.ok);
-      };
-      const timer = setTimeout(() => done(false), 1000);
-      window.addEventListener('message', onMsg);
-      window.postMessage({ source: 'muse-helper', type: 'navigate', id: reqId, path }, location.origin);
     });
   }
 

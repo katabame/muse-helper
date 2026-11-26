@@ -1345,6 +1345,11 @@
         try { chrome.storage.local.set({ [MuseHelper.DRAFTS_ENABLED_KEY]: draftsEnabled }); } catch (e) {}
       }));
     card.appendChild(divider());
+    card.appendChild(actionRow('muse-helper-drafts-open', 'button', '一覧を開く', `すべての会話の下書きを表示します(${keyText('drafts')} でも開けます)`, () => {
+      closeSettings();
+      setTimeout(() => MuseHelper.draftList && MuseHelper.draftList.open(), 150);
+    }));
+    card.appendChild(divider());
     const countRow = row('muse-helper-drafts-count');
     countRow.appendChild(texts('保存中の下書き', '30日たった下書きは自動で削除されます'));
     countRow.appendChild(el('div', 'muse-helper-drafts-num flex items-center self-center ps-2 text-subheadline text-text-primary'));

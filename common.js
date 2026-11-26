@@ -212,6 +212,7 @@ globalThis.MuseHelper = (() => {
     { id: 'search', code: 'KeyS', title: '会話内を検索' },
     { id: 'snippet', code: 'KeyT', title: '定型文を挿入' },
     { id: 'bookmarks', code: 'KeyB', title: 'ブックマークの一覧を開く/閉じる' },
+    { id: 'drafts', code: 'KeyR', title: '下書きの一覧を開く/閉じる' },
     { id: 'help', code: 'Slash', title: 'ショートカットの一覧を表示' },
   ];
   // KeyboardEvent.code を表示用の文字に(KeyS → S、Digit1 → 1、ArrowUp → ↑)
@@ -298,6 +299,22 @@ globalThis.MuseHelper = (() => {
     diskNewer(u) {
       return !!(u && u.unpacked && u.disk && this.isNewer(u.disk, this.version()));
     },
+    // 別の会話へ再読み込みせずに移動する(nav-main.js(MAIN world)に Next.js の画面の切り替えを頼む)。
+    // 1秒以内に返事がなければ失敗(false)
+    navigate(path) {
+      return new Promise((resolve) => {
+        const reqId = Math.random().toString(36).slice(2);
+        const done = (ok) => { window.removeEventListener('message', onMsg); clearTimeout(timer); resolve(ok); };
+        const onMsg = (e) => {
+          const m = e.data;
+          if (e.source === window && m && m.source === 'muse-helper' && m.type === 'navigate-result' && m.id === reqId) done(!!m.ok);
+        };
+        const timer = setTimeout(() => done(false), 1000);
+        window.addEventListener('message', onMsg);
+        window.postMessage({ source: 'muse-helper', type: 'navigate', id: reqId, path }, location.origin);
+      });
+    },
+
     // 再読み込みして更新し、このタブも読み込み直す。
     // ほかの muse.ai のタブには localStorage で合図する(storage イベントはほかのタブにだけ届く。
     // 再読み込みで chrome.* が使えなくなった古いスクリプトでも受け取れる。タブの URL を見る権限も要らない)

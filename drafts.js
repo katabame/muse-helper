@@ -362,9 +362,52 @@
       return;
     }
     restorePending();
+    finishOpening();
     watch();
     renderChip();
   }
+
+  // ---------- 下書きの一覧(draftlist.js)から使う ----------
+  // 下書きを入力欄に戻す。別の会話なら、その会話へ移動してから戻す。
+  // 入力欄に別の文章があれば、それは「以前の下書き」に残してから入れ替える。fromHistory なら以前の下書きから消す
+  let opening = null; // { path, text, until }
+  function openDraft(path, text, fromHistory) {
+    if (fromHistory) forget(path, text);
+    if (path === chatKey()) return putHere(text);
+    opening = { path, text, until: Date.now() + 15000 };
+    M.navigate(path).then((ok) => {
+      if (ok) return;
+      // 画面の切り替えが使えなければ、読み込み直して移動する(移動先で drafts.js が入力欄に戻す)
+      opening = null;
+      try { sessionStorage.setItem(M.PENDING_DRAFT, JSON.stringify({ path, text, at: Date.now() })); } catch (e) {}
+      location.assign(path);
+    });
+  }
+  function putHere(text) {
+    const t = M.composerInput();
+    if (!t) return false;
+    if (t.value && t.value !== text) keep(chatKey(), t.value);
+    if (enabled) saveDraft(chatKey(), text);
+    put(text);
+    return true;
+  }
+  // 移動先の会話の入力欄が出たら戻す
+  function finishOpening() {
+    if (!opening) return;
+    if (Date.now() > opening.until) { opening = null; return; }
+    if (chatKey() !== opening.path || !M.composerInput()) return;
+    const { text } = opening;
+    opening = null;
+    // 画面の切り替え直後は Muse が入力欄を作り直すことがあるので、少し待ってから入れる
+    setTimeout(() => putHere(text), 300);
+  }
+
+  M.drafts = {
+    all: () => ({ drafts, history }),
+    open: openDraft,
+    remove: (path) => deleteDraft(path, false),
+    forget: (path, text) => forget(path, text),
+  };
 
   // ---------- 起動 ----------
   try {

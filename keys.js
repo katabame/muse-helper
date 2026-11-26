@@ -106,6 +106,7 @@
     search: () => M.search && M.search.toggle(),
     snippet: () => M.snippets && M.snippets.open(),
     bookmarks: () => M.bookmarks && M.bookmarks.toggle(),
+    drafts: () => M.draftList && M.draftList.toggle(),
     help,
   };
 
