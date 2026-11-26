@@ -1501,7 +1501,7 @@
     wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', '開発者向け'));
     const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
     card.appendChild(switchRow('muse-helper-dev-toggle', 'デベロッパーモード',
-      '調査用のツールを表示し、DevTools の Console で museHelper を使えるようにします', () => {
+      '調査用のツールを表示し、DevTools の Console で museHelper を使えるようにします。拡張機能のファイルを書き換えると、自動で再読み込みします', () => {
         devMode = !devMode;
         applyDevAttr();
         document.querySelectorAll('.' + PANE).forEach(syncDev);

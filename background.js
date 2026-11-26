@@ -51,6 +51,49 @@ async function emojiNames() {
   return emojiCache;
 }
 
+// ---------- デベロッパーモード: ファイルが変わったら自動で再読み込み ----------
+// デベロッパーモードのとき、muse.ai のタブ(content.js)が1.5秒ごとに museDevCheck を送ってくる。
+// 拡張機能のファイル(manifest.json・background・content scripts・同梱のデータ)の中身のハッシュを、
+// 起動したときのもの(storage.session に保存。service worker が止まって起き直しても引き継ぐ)と比べ、
+// 変わっていれば、書き込みの途中で読まないよう 0.5 秒おいてもう一度確かめてから再読み込みする。
+// 再読み込みすると、開いている muse.ai のタブは content.js が入力中の文章を預けて自動で読み込み直す。
+const DEV_BASE_KEY = 'museDevFilesHash';
+let devChecking = null;
+let devLastAt = 0;
+function devFiles() {
+  const m = chrome.runtime.getManifest();
+  const files = new Set(['manifest.json', 'emoji-ja.json']);
+  if (m.background && m.background.service_worker) files.add(m.background.service_worker);
+  for (const cs of m.content_scripts || []) for (const f of cs.js || []) files.add(f);
+  return [...files];
+}
+async function devHash() {
+  let h = 0x811c9dc5;
+  for (const f of devFiles()) {
+    let text = '';
+    try { text = await (await fetch(chrome.runtime.getURL(f), { cache: 'no-store' })).text(); } catch (e) { text = '(missing)'; }
+    const s = f + '\n' + text;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  }
+  return h.toString(16);
+}
+async function devCheck() {
+  if (devChecking) return devChecking;
+  if (Date.now() - devLastAt < 1000) return { changed: false };
+  devChecking = (async () => {
+    devLastAt = Date.now();
+    const base = (await chrome.storage.session.get(DEV_BASE_KEY))[DEV_BASE_KEY];
+    const now = await devHash();
+    if (!base) { await chrome.storage.session.set({ [DEV_BASE_KEY]: now }); return { changed: false }; }
+    if (now === base) return { changed: false };
+    await new Promise((r) => setTimeout(r, 500));
+    if ((await devHash()) !== now) return { changed: false }; // まだ書き込み中。次の確認で
+    chrome.runtime.reload(); // storage.session は再読み込みで消えるので、起動後に新しい中身で記録し直される
+    return { changed: true };
+  })();
+  try { return await devChecking; } finally { devChecking = null; }
+}
+
 // フォルダだけを確認する(1分ごと・muse.ai のページを開いたとき)。変わったときだけ保存する
 // (毎回保存すると、すべてのタブでバッジの描き直しが起きるため)
 async function checkDisk() {
@@ -179,6 +222,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // リアクションの絵文字の名前(reactions.js)。ページ側から拡張機能のファイルを読めないので、ここで読んで渡す
   if (msg && msg.type === 'museEmojiNames') {
     emojiNames().then(sendResponse);
+    return true;
+  }
+  // デベロッパーモードのファイルの確認
+  if (msg && msg.type === 'museDevCheck') {
+    devCheck().then(sendResponse, () => sendResponse({ changed: false }));
     return true;
   }
   // muse.ai のページを開いたときのフォルダの確認

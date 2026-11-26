@@ -441,6 +441,25 @@
     if (MuseHelper.stashComposer()) location.reload();
   }, 2000);
 
+  // デベロッパーモードのとき: 拡張機能のファイルが変わったら自動で再読み込みしてもらう(background.js の devCheck)。
+  // 1.5秒ごとに確認を頼む(background が止まっていても、この依頼で起きる)
+  let devTimer = 0;
+  function devWatch(on) {
+    clearInterval(devTimer);
+    devTimer = 0;
+    if (!on) return;
+    devTimer = setInterval(() => {
+      if (!MuseHelper.alive()) return clearInterval(devTimer);
+      try { chrome.runtime.sendMessage({ type: 'museDevCheck' }, () => void chrome.runtime.lastError); } catch (e) {}
+    }, 1500);
+  }
+  try {
+    chrome.storage.local.get(MuseHelper.DEV_MODE_KEY, (v) => devWatch(!!(v && v[MuseHelper.DEV_MODE_KEY])));
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[MuseHelper.DEV_MODE_KEY]) devWatch(!!changes[MuseHelper.DEV_MODE_KEY].newValue);
+    });
+  } catch (e) {}
+
   // ほかのタブで「再読み込みして更新」が押されたら、拡張機能の再読み込みを待ってからこのタブも読み込み直す
   window.addEventListener('storage', (e) => {
     if (e.key !== MuseHelper.RELOAD_SIGNAL || !e.newValue) return;
