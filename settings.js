@@ -357,9 +357,9 @@
     const auto = autoStatus && autoStatus.auto;
     note.textContent =
       `最終取得: ${M.ago(Date.now() - f.at)}。` +
-      (!auto ? '自動更新は停止中です(このタブで設定画面の「一般」を一度開くと始まります)。'
+      (!auto ? '自動更新は停止中です(設定画面の「一般」を一度開くと始まり、次からはページを開くだけで自動更新します)。'
         : autoStatus.lastError ? `自動更新(${Math.round(autoStatus.intervalMs / 60000)}分ごと)の前回の取得に失敗しました: ${autoStatus.lastError}`
-        : `自動更新: 有効(${Math.round(autoStatus.intervalMs / 60000)}分ごと、タブを表示している間)。`);
+        : `自動更新: 有効(${Math.round(autoStatus.intervalMs / 60000)}分ごと。タブが裏にあっても更新し、複数のタブで開いているときは1つのタブだけが取得します)。`);
   }
 
   // オン/オフのスイッチ行(状態は aria-checked で表す)

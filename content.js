@@ -347,7 +347,7 @@
     const autoLine = auto
       ? `自動更新: 有効(${Math.round(autoStatus.intervalMs / 60000)}分ごと)` +
         (autoStatus.lastError ? `\n  前回の取得に失敗: ${autoStatus.lastError}` : '')
-      : '自動更新: 停止中(設定画面を一度開くと、このタブで自動更新が始まります)';
+      : '自動更新: 停止中(設定画面の「一般」を一度開くと始まり、次からはページを開くだけで自動更新します)';
     el.title =
       `${state.label || '週間使用量'}\n` +
       (state.extra ? `追加トークン: 残り${state.extra}\n` : '') +
