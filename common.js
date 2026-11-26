@@ -144,6 +144,7 @@ globalThis.MuseHelper = (() => {
   // 時刻は timestamps.js(MAIN world)がメッセージに付けたラベルの data-iso から読む
   const OWN_IN_MESSAGE = '.muse-ts-label, .muse-date-sep, .muse-bm-btn';
   const RELOAD_SIGNAL = 'museHelperReloadAt'; // 「再読み込みして更新」の合図(muse.ai の localStorage)
+  const PENDING_DRAFT = 'museHelperPendingDraft'; // 拡張機能の更新で読み込み直す前の入力欄の文章(このタブの sessionStorage)
   function isUserMessage(el) {
     const role = (el.getAttribute('data-message-role') || '').toLowerCase();
     const side = (el.getAttribute('data-message-side') || '').toLowerCase();
@@ -300,8 +301,22 @@ globalThis.MuseHelper = (() => {
     // 再読み込みして更新し、このタブも読み込み直す。
     // ほかの muse.ai のタブには localStorage で合図する(storage イベントはほかのタブにだけ届く。
     // 再読み込みで chrome.* が使えなくなった古いスクリプトでも受け取れる。タブの URL を見る権限も要らない)
+    // 読み込み直す前に、入力欄の文章をこのタブの sessionStorage に預ける(読み込み直したあと drafts.js が戻す)。
+    // 預けられなかったら false
+    stashComposer() {
+      try {
+        const t = composerInput();
+        if (t && t.value && t.value.trim()) {
+          sessionStorage.setItem(PENDING_DRAFT, JSON.stringify({ path: location.pathname, text: t.value, at: Date.now() }));
+        }
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
     reloadToUpdate() {
       try { localStorage.setItem(RELOAD_SIGNAL, String(Date.now())); } catch (e) {}
+      this.stashComposer();
       try { chrome.runtime.sendMessage({ type: 'museReloadSelf' }); } catch (e) {}
       setTimeout(() => location.reload(), 1500);
     },
@@ -318,7 +333,7 @@ globalThis.MuseHelper = (() => {
     HOUR, DAY, WEEK,
     resetDate, forecast, severity, when, projText,
     composerInput, composerLayout, charCount,
-    RELOAD_SIGNAL, messages, messageText, scrollToMessage, duration, ALT, SHORTCUTS, keyLabel, shortcutCodes, insertText, dayKey, OWN_IN_MESSAGE,
+    RELOAD_SIGNAL, PENDING_DRAFT, messages, messageText, scrollToMessage, duration, ALT, SHORTCUTS, keyLabel, shortcutCodes, insertText, dayKey, OWN_IN_MESSAGE,
     SEVERITY_COLOR: ['#16a34a', '#d97706', '#dc2626'], // 設定画面(明暗どちらでも読める濃さ)
     fmt12: () => document.documentElement.getAttribute('data-muse-ts-format') === '12',
     signed(n, digits = 0) {

@@ -281,7 +281,8 @@
     if (!el) build();
     small.style.display = ''; // 縮小表示で隠した行を戻す(他の行は下で表示/非表示を決め直す)
     if (!MuseHelper.alive()) {
-      // 拡張機能が再読み込み・更新された後の古いスクリプト。表示はそのまま残し、再読み込みを促す。
+      // 拡張機能が再読み込み・更新された後の古いスクリプト。ふだんはすぐ読み込み直すので(下の orphanCheck)、
+      // ここが見えるのは読み込み直せなかったとき
       upd.style.display = 'none';
       warn.textContent = '⚠ 拡張機能が更新されました — ページを再読み込みしてください';
       warn.style.display = 'block';
@@ -427,11 +428,21 @@
   // ページを開いたら、インストールしたフォルダが新しくなっていないか確認する(1分ごとの確認を待たずにボタンを出すため)
   try { chrome.runtime.sendMessage({ type: 'museCheckDisk' }, () => void chrome.runtime.lastError); } catch (e) {}
 
+  // 拡張機能が更新・再読み込みされたら(chrome://extensions の ↻ など)、このタブも読み込み直す。
+  // 古いスクリプトは chrome.* が使えず下書きも保存できないので、入力欄の文章はこのタブの sessionStorage に預け、
+  // 読み込み直したあと drafts.js が下書きに保存して入力欄に戻す
+  const orphanCheck = setInterval(() => {
+    if (MuseHelper.alive()) return;
+    clearInterval(orphanCheck);
+    // 預けられなかったら、文章が消えないよう読み込み直さない(バッジに警告を出したまま)
+    if (MuseHelper.stashComposer()) location.reload();
+  }, 2000);
+
   // ほかのタブで「再読み込みして更新」が押されたら、拡張機能の再読み込みを待ってからこのタブも読み込み直す
   window.addEventListener('storage', (e) => {
     if (e.key !== MuseHelper.RELOAD_SIGNAL || !e.newValue) return;
     if (Date.now() - Number(e.newValue) > 60 * 1000) return;
-    setTimeout(() => location.reload(), 2000);
+    setTimeout(() => { MuseHelper.stashComposer(); location.reload(); }, 2000);
   });
 
   // ---------- 起動 ----------

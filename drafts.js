@@ -330,11 +330,37 @@
     chip.style.display = 'flex';
   }
 
+  // 拡張機能の更新で読み込み直す前に入力していた文章(content.js が sessionStorage に預けたもの)を、
+  // 下書きに保存して入力欄に戻す。入力欄が出るまで待つ(最大30秒)
+  let pending = null;
+  try {
+    const raw = sessionStorage.getItem(M.PENDING_DRAFT);
+    sessionStorage.removeItem(M.PENDING_DRAFT);
+    const p = raw && JSON.parse(raw);
+    if (p && typeof p.text === 'string' && p.text.trim() && p.path === chatKey() && Date.now() - p.at < 5 * 60 * 1000) pending = p;
+  } catch (e) {}
+  const pendingUntil = Date.now() + 30000;
+  function restorePending() {
+    if (!pending || !loaded) return;
+    if (Date.now() > pendingUntil) { pending = null; return; }
+    const t = M.composerInput();
+    if (!t) return;
+    const text = pending.text;
+    pending = null;
+    if (!t.value) {
+      if (enabled) saveDraft(chatKey(), text);
+      put(text);
+    } else if (t.value !== text) {
+      keep(chatKey(), text); // 何か入っていたら上書きせず「以前の下書き」に残す
+    }
+  }
+
   function tick() {
     if (!M.alive()) {
       if (chip) chip.style.display = 'none';
       return;
     }
+    restorePending();
     watch();
     renderChip();
   }
