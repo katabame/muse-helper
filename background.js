@@ -43,6 +43,14 @@ async function diskVersion() {
   }
 }
 // ストアからインストールした拡張機能の manifest には update_url が入る
+let emojiCache = null;
+async function emojiNames() {
+  if (!emojiCache) {
+    emojiCache = fetch(chrome.runtime.getURL('emoji-ja.json')).then((r) => r.json()).catch(() => { emojiCache = null; return null; });
+  }
+  return emojiCache;
+}
+
 // フォルダだけを確認する(1分ごと・muse.ai のページを開いたとき)。変わったときだけ保存する
 // (毎回保存すると、すべてのタブでバッジの描き直しが起きるため)
 async function checkDisk() {
@@ -166,6 +174,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 設定パネルの「今すぐ確認」
   if (msg && msg.type === 'museCheckUpdate') {
     check().then(sendResponse);
+    return true;
+  }
+  // リアクションの絵文字の名前(reactions.js)。ページ側から拡張機能のファイルを読めないので、ここで読んで渡す
+  if (msg && msg.type === 'museEmojiNames') {
+    emojiNames().then(sendResponse);
     return true;
   }
   // muse.ai のページを開いたときのフォルダの確認

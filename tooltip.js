@@ -34,9 +34,18 @@
     target = null;
   }
 
-  function show(e) {
-    const text = e.dataset.museTip;
-    if (!text || !e.isConnected) return;
+  // Muse の要素に説明を足す仕組み: provide(セレクター, 要素 → 説明) で登録する。
+  // 説明は文字列、または { big: 大きく出す文字, text: その下の文字 }、またはそれを返す関数(表示する時点で呼ぶ)
+  const providers = [];
+  // opts.delay: 表示までの時間(ms。既定 500)
+  function provide(selector, fn, opts) {
+    providers.push({ selector, fn, delay: (opts && opts.delay) || DELAY });
+  }
+
+  // content: 文字列、または { big, text }(省略時は data-muse-tip)
+  function show(e, content) {
+    const c = typeof content === 'function' ? content() : content || e.dataset.museTip;
+    if (!c || !e.isConnected) return;
     if (!tip) {
       tip = document.createElement('div');
       tip.lang = 'ja';
@@ -46,7 +55,18 @@
         'color:#f0efec;background:rgba(20,20,22,.96);border:1px solid rgba(255,255,255,.14);box-shadow:0 6px 20px rgba(0,0,0,.35);';
       document.documentElement.appendChild(tip);
     }
-    tip.textContent = text;
+    if (typeof c === 'string') {
+      tip.textContent = c;
+    } else {
+      tip.textContent = '';
+      if (c.big) {
+        const big = document.createElement('div');
+        big.textContent = c.big;
+        big.style.cssText = 'font-size:40px;line-height:1.15;text-align:center;margin:2px 0 4px;';
+        tip.appendChild(big);
+      }
+      if (c.text) tip.appendChild(document.createTextNode(c.text));
+    }
     // 要素の下に出す(入らなければ上)。左右は画面内に収める
     const r = e.getBoundingClientRect(), t = tip.getBoundingClientRect();
     const top = r.bottom + 6 + t.height <= window.innerHeight ? r.bottom + 6 : Math.max(8, r.top - 6 - t.height);
@@ -64,11 +84,21 @@
     let e = start && start.closest('[title], [data-muse-tip]');
     while (e && !isOurs(e)) e = e.parentElement && e.parentElement.closest('[title], [data-muse-tip]');
     if (e) adopt(e);
+    // Muse Helper の説明がなければ、登録された Muse の要素の説明を探す
+    let content = null, delay = DELAY;
+    if (!e && start) {
+      for (const p of providers) {
+        const hit = start.closest(p.selector);
+        if (!hit) continue;
+        try { content = p.fn(hit); } catch (err) { content = null; }
+        if (content) { e = hit; delay = p.delay; break; }
+      }
+    }
     if (e === target) return;
     hide();
-    if (!e || !e.dataset.museTip) return;
+    if (!e || !(content || e.dataset.museTip)) return;
     target = e;
-    timer = setTimeout(() => { if (target === e && !pressed) show(e); }, DELAY);
+    timer = setTimeout(() => { if (target === e && !pressed) show(e, content); }, delay);
   }, true);
   document.addEventListener('mouseout', (ev) => {
     if (target && !(ev.relatedTarget && target.contains(ev.relatedTarget))) hide();
@@ -97,5 +127,5 @@
     });
   }
 
-  M.tooltip = { bind, hide };
+  M.tooltip = { bind, hide, provide };
 })();
