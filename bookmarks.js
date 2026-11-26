@@ -419,6 +419,7 @@
         text: M.messageText(msgEl).replace(/^(自分|相手|ユーザー|アシスタント)(メッセージ)?[:：]\s*/, '').slice(0, 160),
         at: m && m.at,
         user: !!(m && m.user),
+        agent: (m && !m.user && M.assistantName()) || undefined, // 保存したときのアシスタントの名前
         savedAt: Date.now(),
       };
       capture(id, msgEl);
@@ -641,7 +642,7 @@
         const go = el('button', 'bm-go');
         go.type = 'button';
         go.append(el('div', 'bm-text', b.text || '(本文なし)'),
-          el('div', 'bm-meta', `${sort === 'added' ? `${chatName(b)} ・ ` : ''}${b.at ? M.when(b.at, fmt12, true) : '時刻不明'} ・ ${b.user ? '自分' : '相手'}`));
+          el('div', 'bm-meta', `${sort === 'added' ? `${chatName(b)} ・ ` : ''}${b.at ? M.when(b.at, fmt12, true) : '時刻不明'} ・ ${b.user ? '自分' : b.agent || M.otherName()}`));
         if (b.memo && editing !== b.id) go.appendChild(el('div', 'bm-memo', b.memo));
         go.addEventListener('click', () => jump(b.id));
         if (editing === b.id) {
@@ -735,7 +736,7 @@
     bar.append(back, go);
     body.appendChild(bar);
     const chat = b.path === location.pathname ? 'この会話' : b.title || '別の会話';
-    body.appendChild(el('div', 'bm-view-meta', `${chat} ・ ${b.at ? M.when(b.at, M.fmt12(), true) : '時刻不明'} ・ ${b.user ? '自分' : '相手'}`));
+    body.appendChild(el('div', 'bm-view-meta', `${chat} ・ ${b.at ? M.when(b.at, M.fmt12(), true) : '時刻不明'} ・ ${b.user ? '自分' : b.agent || M.otherName()}`));
     if (b.memo) body.appendChild(el('div', 'bm-memo bm-view-memo', b.memo));
     const doc = el('div', 'bm-doc');
     if (Array.isArray(b.body) && b.body.length) {

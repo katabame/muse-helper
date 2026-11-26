@@ -71,7 +71,7 @@
       input.setAttribute('aria-label', '会話内を検索');
       const sel = document.createElement('select');
       sel.setAttribute('aria-label', '検索する範囲');
-      for (const [v, t] of [['all', 'すべて'], ['user', '自分'], ['other', '相手']]) {
+      for (const [v, t] of [['all', 'すべて'], ['user', '自分'], ['other', M.otherName()]]) {
         const o = document.createElement('option');
         o.value = v;
         o.textContent = t;

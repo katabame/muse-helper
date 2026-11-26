@@ -82,6 +82,7 @@
 - 会話内の検索は、CSS Custom Highlight API で色を付けるため、Muse の画面に要素を足しません(`search.js`)。
 - 使用ペースの予測は、利用状況を読み取るたびに使用率を記録し(値が変わったとき、または15分ごと。14日分を保持)、その記録から計算しています(`common.js` の `forecast`)。
 - アップデート確認は、service worker(`background.js`)が1時間ごとに GitHub API の `releases/latest` を取得し、タグ(例: `v0.4.0`)を `manifest.json` の `version` と比較しています。リリースのタグは `v<version>` の形式にしてください。
+- 画面の「相手」の表記(ブックマーク・会話の統計・検索の範囲・返信の通知・リアクションの説明など)には、アシスタントの名前を使います。名前は Muse の画面上部のアバター(`data-hatch-avatar-accessory="status-pill"` の `aria-label`)から覚えて `museAssistantName` に保存します(分からないうちは「相手」)。
 - リアクションの絵文字にマウスを乗せると、絵文字を大きく表示し、日本語の名前を添えたツールチップを出します(`reactions.js`)。名前は Unicode CLDR の日本語の読み上げ名から作った `emoji-ja.json` を使います(ライセンスは `THIRD_PARTY_NOTICES.md`)。
 - Muse Helper の表示の説明(ツールチップ)は、Chrome 標準のもの(`title` 属性)だと OS のフォントで描かれ、環境によって漢字が中国語の字形になるため、`tooltip.js` が `title` を `data-muse-tip` に移して自前で表示しています(日本語のフォントを優先、`lang="ja"`)。
 - 「再読み込みして更新」は、パッケージ化されていない拡張機能(`chrome.management.getSelf()` の `installType` が `development`)のときだけ使えます。service worker が拡張機能のフォルダの `manifest.json` を `fetch(chrome.runtime.getURL('manifest.json'))` で読み、今動いている版より新しければボタンを出します。フォルダの確認は GitHub の確認(1時間ごと)とは別に、1分ごと(`chrome.alarms`)と、muse.ai のページを開いたとき(`content.js` からのメッセージ)に行い、変わったときだけ保存します。押すと `chrome.runtime.reload()` で再読み込みし、押したタブは自分で、ほかの muse.ai のタブは localStorage(`museHelperReloadAt`)の `storage` イベントを合図に読み込み直します(タブの URL を見る権限は使いません)。

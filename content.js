@@ -441,6 +441,18 @@
     if (MuseHelper.stashComposer()) location.reload();
   }, 2000);
 
+  // アシスタントの名前を覚える(画面上部のアバターの aria-label。なければタブの名前「Chat — ロチェ」)
+  function learnAssistant() {
+    if (!MuseHelper.alive()) return;
+    const pill = document.querySelector('[data-hatch-avatar-accessory="status-pill"][aria-label]');
+    let name = pill ? pill.getAttribute('aria-label').trim() : '';
+    if (!name) name = ((document.title.match(/^Chat\s*[—–-]\s*(.+)$/) || [])[1] || '').trim();
+    if (!name || name.length > 40 || name === MuseHelper.assistantName()) return;
+    try { chrome.storage.local.set({ [MuseHelper.ASSISTANT_KEY]: name }); } catch (e) {}
+  }
+  setTimeout(learnAssistant, 2000);
+  setInterval(learnAssistant, 10000);
+
   // デベロッパーモードのとき: 拡張機能のファイルが変わったら自動で再読み込みしてもらう(background.js の devCheck)。
   // 1.5秒ごとに確認を頼む(background が止まっていても、この依頼で起きる)
   let devTimer = 0;

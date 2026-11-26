@@ -207,7 +207,7 @@
     const extras = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
     extras.appendChild(prefSwitch(MuseHelper.DATE_SEP_KEY, '日付の区切り線', '日付が変わるところに「── 11月23日(月) ──」の線を入れます'));
     extras.appendChild(divider());
-    extras.appendChild(prefSwitch(MuseHelper.RESP_TIME_KEY, '応答時間', '相手の返信の時刻に「・12秒で応答」のように添えます'));
+    extras.appendChild(prefSwitch(MuseHelper.RESP_TIME_KEY, '応答時間', `${MuseHelper.otherName()}の返信の時刻に「・12秒で応答」のように添えます`));
     group.appendChild(extras);
     body.appendChild(group);
 
@@ -471,9 +471,10 @@
     } else {
       const n = (v) => v.toLocaleString();
       const avg = (s) => (s.n ? `平均 ${n(Math.round(s.chars / s.n))}字` : '');
-      rows.push([`メッセージ ${n(st.total)}件`, `自分 ${n(st.user.n)}件 ・ 相手 ${n(st.other.n)}件`]);
+      const other = M.otherName();
+      rows.push([`メッセージ ${n(st.total)}件`, `自分 ${n(st.user.n)}件 ・ ${other} ${n(st.other.n)}件`]);
       rows.push([`文字数 ${n(st.user.chars + st.other.chars)}字(空白を除く)`,
-        `自分 ${n(st.user.chars)}字(${avg(st.user)}) ・ 相手 ${n(st.other.chars)}字(${avg(st.other)})`]);
+        `自分 ${n(st.user.chars)}字(${avg(st.user)}) ・ ${other} ${n(st.other.chars)}字(${avg(st.other)})`]);
       if (st.resp.length) {
         const r = st.resp, mid = r.length % 2 ? r[(r.length - 1) / 2] : (r[r.length / 2 - 1] + r[r.length / 2]) / 2;
         const mean = r.reduce((a, b) => a + b, 0) / r.length;
@@ -1098,7 +1099,7 @@
       '週の使用率がリセットされたら通知します(muse.ai を閉じていても届きます。正確なリセット日時が分かっているときだけ)'));
     card.appendChild(divider());
     card.appendChild(prefSwitch(MuseHelper.REPLY_NOTIFY_KEY, '返信の通知',
-      '別のタブやアプリを見ている間に相手の返信が届いたら通知します。通知を押すとそのタブを開きます'));
+      `別のタブやアプリを見ている間に${MuseHelper.otherName()}の返信が届いたら通知します。通知を押すとそのタブを開きます`));
     card.appendChild(divider());
     card.appendChild(prefSwitch(MuseHelper.REPLY_PREVIEW_KEY, '返信の通知に本文の冒頭を表示',
       'オフのときは「返信が届きました」とだけ表示します(通知は画面の端や通知センターに残ります)'));

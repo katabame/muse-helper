@@ -2,6 +2,14 @@
 globalThis.MuseHelper = (() => {
   'use strict';
   const REPO = 'katabame/muse-helper';
+  const ASSISTANT_KEY = 'museAssistantName'; // Muse のアシスタントの名前(content.js が画面から覚える)
+  let assistant = '';
+  try {
+    chrome.storage.local.get(ASSISTANT_KEY, (v) => { assistant = (v && v[ASSISTANT_KEY]) || ''; });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[ASSISTANT_KEY]) assistant = changes[ASSISTANT_KEY].newValue || '';
+    });
+  } catch (e) {}
 
   // "v0.4.0" / "0.4.0" を [0, 4, 0] に。数字以外の部分(-beta など)は無視する。
   function parse(v) {
@@ -374,6 +382,12 @@ globalThis.MuseHelper = (() => {
       if (n >= 1e4) return `${Math.round(n / 1e4).toLocaleString()}万`;
       return n.toLocaleString();
     },
+
+    ASSISTANT_KEY,
+    // アシスタントの名前(まだ分からなければ空)
+    assistantName: () => assistant,
+    // 表示用: アシスタントの名前、分からなければ「相手」
+    otherName: () => assistant || '相手',
 
     ago(ms) {
       const m = Math.floor(ms / 60000);

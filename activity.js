@@ -104,7 +104,7 @@
     try {
       chrome.runtime.sendMessage({
         type: 'museNotify', id: `reply:${id}`, pref: M.REPLY_NOTIFY_KEY, focusTab: true,
-        title: '返信が届きました',
+        title: M.assistantName() ? `${M.assistantName()}から返信が届きました` : '返信が届きました',
         message: replyPreview && head ? head : `${title && !/^muse$/i.test(title) ? `「${title}」に` : ''}返信が届きました。クリックすると開きます。`,
       }, () => void chrome.runtime.lastError);
     } catch (e) {}

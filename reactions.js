@@ -68,6 +68,8 @@
     } else {
       const i = label.lastIndexOf(':');
       who = i >= 0 ? label.slice(0, i).trim() : 'リアクション';
+      // Muse のラベルの「アシスタント」を実際の名前に
+      if (M.assistantName()) who = who.replace(/^アシスタント/, M.assistantName());
       emoji = (i >= 0 ? label.slice(i + 1) : el.textContent).trim();
     }
     if (!emoji || !/\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(emoji)) return null;
