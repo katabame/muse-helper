@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Muse Helper のアイコン。Muse のロゴの「手書きの m」をもとに描き起こし、
+       公式アプリと見分けられるよう、暗い角丸の地と、右下の「✦(手助け)」の印を足している -->
+  <defs>
+    <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f5fe0"/>
+      <stop offset="1" stop-color="#2f97ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#1d1d21"/>
+  <path d="M16 50 L31 28 L25 90 L55 32 L50 90 L79 44 L77 78"
+        fill="none" stroke="url(#stroke)" stroke-width="12.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="100" cy="100" r="19" fill="#1d1d21"/>
+  <circle cx="100" cy="100" r="14.5" fill="#5eead4"/>
+  <path d="M100 90 Q101.4 98.6 110 100 Q101.4 101.4 100 110 Q98.6 101.4 90 100 Q98.6 98.6 100 90 Z" fill="#1d1d21"/>
+</svg>
