@@ -143,6 +143,7 @@ globalThis.MuseHelper = (() => {
   // ---------- チャットのメッセージ(会話の統計・ショートカット・ブックマークで共有) ----------
   // 時刻は timestamps.js(MAIN world)がメッセージに付けたラベルの data-iso から読む
   const OWN_IN_MESSAGE = '.muse-ts-label, .muse-date-sep, .muse-bm-btn';
+  const RELOAD_SIGNAL = 'museHelperReloadAt'; // 「再読み込みして更新」の合図(muse.ai の localStorage)
   function isUserMessage(el) {
     const role = (el.getAttribute('data-message-role') || '').toLowerCase();
     const side = (el.getAttribute('data-message-side') || '').toLowerCase();
@@ -249,7 +250,7 @@ globalThis.MuseHelper = (() => {
 
   return {
     REPO,
-    UPDATE_KEY: 'museUpdate', // { latest, url, etag, checkedAt, error }
+    UPDATE_KEY: 'museUpdate', // { latest, url, etag, checkedAt, error, disk, unpacked }(disk: フォルダのファイルのバージョン)
     USAGE_KEY: 'museUsageBadge', // { label, used, reset, extra, at }
     PACE_BADGE_KEY: 'museShowPaceInBadge', // false ならオーバーレイに使用ペースの行を出さない(既定は表示)
     DRAFTS_KEY: 'museDrafts', // { [チャットのパス]: { text, at } }
@@ -292,6 +293,19 @@ globalThis.MuseHelper = (() => {
     },
 
     // tag が current より新しいか
+    // フォルダのファイルが今動いている版より新しいか(再読み込みすれば反映できる)
+    diskNewer(u) {
+      return !!(u && u.unpacked && u.disk && this.isNewer(u.disk, this.version()));
+    },
+    // 再読み込みして更新し、このタブも読み込み直す。
+    // ほかの muse.ai のタブには localStorage で合図する(storage イベントはほかのタブにだけ届く。
+    // 再読み込みで chrome.* が使えなくなった古いスクリプトでも受け取れる。タブの URL を見る権限も要らない)
+    reloadToUpdate() {
+      try { localStorage.setItem(RELOAD_SIGNAL, String(Date.now())); } catch (e) {}
+      try { chrome.runtime.sendMessage({ type: 'museReloadSelf' }); } catch (e) {}
+      setTimeout(() => location.reload(), 1500);
+    },
+
     isNewer(tag, current) {
       const a = parse(tag), b = parse(current);
       for (let i = 0; i < Math.max(a.length, b.length); i++) {
@@ -304,7 +318,7 @@ globalThis.MuseHelper = (() => {
     HOUR, DAY, WEEK,
     resetDate, forecast, severity, when, projText,
     composerInput, composerLayout, charCount,
-    messages, messageText, scrollToMessage, duration, ALT, SHORTCUTS, keyLabel, shortcutCodes, insertText, dayKey, OWN_IN_MESSAGE,
+    RELOAD_SIGNAL, messages, messageText, scrollToMessage, duration, ALT, SHORTCUTS, keyLabel, shortcutCodes, insertText, dayKey, OWN_IN_MESSAGE,
     SEVERITY_COLOR: ['#16a34a', '#d97706', '#dc2626'], // 設定画面(明暗どちらでも読める濃さ)
     fmt12: () => document.documentElement.getAttribute('data-muse-ts-format') === '12',
     signed(n, digits = 0) {

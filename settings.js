@@ -1583,7 +1583,24 @@
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
     });
 
-    card.append(status, linkDivider, link, divider(), btn);
+    // フォルダのファイルが新しくなっていれば、再読み込みで反映する
+    const reload = row('muse-helper-upd-reload hover:bg-fill-secondary-elevated');
+    reload.setAttribute('role', 'button');
+    reload.setAttribute('tabindex', '0');
+    reload.style.cursor = 'pointer';
+    reload.appendChild(texts('再読み込みして更新', 'Muse Helper を再読み込みし、muse.ai のタブを読み込み直します'));
+    const doReload = () => {
+      reload.querySelector('.text-subheadline').textContent = '再読み込みしています…';
+      MuseHelper.reloadToUpdate();
+    };
+    reload.addEventListener('click', doReload);
+    reload.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doReload(); }
+    });
+    const reloadDivider = divider();
+    reloadDivider.classList.add('muse-helper-upd-reload-divider');
+
+    card.append(status, reloadDivider, reload, linkDivider, link, divider(), btn);
     wrap.appendChild(card);
     return wrap;
   }
@@ -1610,9 +1627,21 @@
     if (u && u.error) parts.push(`エラー: ${u.error}`);
     checked.textContent = parts.join(' ・ ') || 'まだ確認していません';
 
+    const disk = MuseHelper.diskNewer(u);
+    if (disk) status.textContent = `v${u.disk} に更新できます(現在 v${cur})`;
+    const reload = pane.querySelector('.muse-helper-upd-reload');
+    if (reload) {
+      reload.style.display = disk ? '' : 'none';
+      pane.querySelector('.muse-helper-upd-reload-divider').style.display = disk ? '' : 'none';
+      if (disk) reload.querySelector('.text-subheadline').textContent = `再読み込みして v${u.disk} に更新`;
+    }
     link.href = (u && u.url) || MuseHelper.RELEASES_URL;
-    link.style.display = has ? '' : 'none';
-    linkDivider.style.display = has ? '' : 'none';
+    link.style.display = has && !disk ? '' : 'none';
+    linkDivider.style.display = has && !disk ? '' : 'none';
+    const linkSub = link.querySelector('.text-caption-1');
+    if (linkSub) linkSub.textContent = u && u.unpacked
+      ? 'インストールしたフォルダを新しくすると(git pull や zip の上書き)、「今すぐ確認」のあとここに「再読み込みして更新」が出ます'
+      : 'ダウンロードして読み込み直すと更新できます';
     btnTitle.textContent = checking ? '確認中…' : '今すぐ確認';
   }
 

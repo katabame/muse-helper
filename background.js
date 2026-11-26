@@ -25,8 +25,30 @@ async function check() {
     next = { ...prev, error: String((e && e.message) || e) };
   }
   next.checkedAt = Date.now();
+  next.disk = await diskVersion();
+  next.unpacked = await isUnpacked();
   await chrome.storage.local.set({ [UPDATE_KEY]: next });
   return next;
+}
+
+// ---------- 再読み込みして更新(パッケージ化されていない拡張機能) ----------
+// フォルダのファイル(manifest.json)のバージョン。git pull などで新しくなっていれば、拡張機能の再読み込みで反映できる
+async function diskVersion() {
+  try {
+    const r = await fetch(chrome.runtime.getURL('manifest.json'), { cache: 'no-store' });
+    return (await r.json()).version || null;
+  } catch (e) {
+    return null;
+  }
+}
+// ストアからインストールした拡張機能の manifest には update_url が入る
+async function isUnpacked() {
+  try { return (await chrome.management.getSelf()).installType === 'development'; } catch (e) {}
+  return !chrome.runtime.getManifest().update_url;
+}
+// 拡張機能を再読み込みする(開いている muse.ai のタブの読み込み直しは、押したタブから localStorage で合図する)
+function reloadSelf() {
+  chrome.runtime.reload();
 }
 
 function schedule() {
@@ -132,6 +154,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === 'museCheckUpdate') {
     check().then(sendResponse);
     return true;
+  }
+  // 「再読み込みして更新」
+  if (msg && msg.type === 'museReloadSelf') {
+    reloadSelf();
+    return;
   }
   if (msg && msg.type === 'museNotify' && msg.id && msg.title) {
     notify(msg, msg.focusTab ? _sender.tab : null).then(sendResponse);

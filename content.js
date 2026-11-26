@@ -140,6 +140,12 @@
     // 自動更新が止まっている・失敗しているときの行(値が古くなる前から出す)
     autoRow = document.createElement('div');
     autoRow.style.cssText = 'margin-top:3px;font-size:11px;white-space:nowrap;display:none;color:#c4b5fd';
+    upd.addEventListener('click', (e) => {
+      if (!MuseHelper.diskNewer(update)) return; // リリースページを開く(リンクのまま)
+      e.preventDefault();
+      upd.textContent = '⬆ 再読み込みしています…';
+      MuseHelper.reloadToUpdate();
+    });
     el.append(big, small, autoRow, pace, warn, upd);
     document.documentElement.appendChild(el);
 
@@ -179,10 +185,18 @@
 
   function renderUpdate() {
     const cur = MuseHelper.version();
-    if (update && update.latest && MuseHelper.isNewer(update.latest, cur)) {
+    if (MuseHelper.diskNewer(update)) {
+      // フォルダのファイルは更新済み: 押すと再読み込みして反映する
+      upd.textContent = `⬆ v${update.disk} に更新 — クリックで再読み込み`;
+      upd.removeAttribute('href');
+      upd.title = 'Muse Helper を再読み込みし、muse.ai のタブを読み込み直して新しい版にします';
+      upd.style.display = 'block';
+    } else if (update && update.latest && MuseHelper.isNewer(update.latest, cur)) {
       upd.textContent = `⬆ ${update.latest} があります(現在 v${cur})`;
       upd.href = update.url || MuseHelper.RELEASES_URL;
-      upd.title = 'クリックでリリースページを開きます';
+      upd.title = update.unpacked
+        ? 'クリックでリリースページを開きます。インストールしたフォルダを新しくすると(git pull など)、ここから再読み込みで更新できます'
+        : 'クリックでリリースページを開きます';
       upd.style.display = 'block';
     } else {
       upd.style.display = 'none';
@@ -409,6 +423,13 @@
       if (area === 'local' && changes[RESP_KEY]) onOff('data-muse-resp-time', changes[RESP_KEY].newValue);
     });
   } catch (e) {}
+
+  // ほかのタブで「再読み込みして更新」が押されたら、拡張機能の再読み込みを待ってからこのタブも読み込み直す
+  window.addEventListener('storage', (e) => {
+    if (e.key !== MuseHelper.RELOAD_SIGNAL || !e.newValue) return;
+    if (Date.now() - Number(e.newValue) > 60 * 1000) return;
+    setTimeout(() => location.reload(), 2000);
+  });
 
   // ---------- 起動 ----------
   let timer;
