@@ -58,7 +58,7 @@
 2. インストールしたフォルダの中身を、展開したファイルで上書きします。
    設定・下書き・使用率の記録を引き継ぐため、**同じフォルダ**に上書きしてください(別のフォルダから読み込むと別の拡張機能として扱われ、保存したデータは引き継がれません)。
 3. 使用率バッジの「⬆ v0.x.x に更新 — クリックで再読み込み」、または設定画面の「Muse Helper」→「アップデート」の「再読み込みして更新」を押します。
-   拡張機能が再読み込みされ、開いている muse.ai のタブもすべて読み込み直されます(フォルダの確認は1時間ごと。すぐ出したいときは「今すぐ確認」を押します)。
+   拡張機能が再読み込みされ、開いている muse.ai のタブもすべて読み込み直されます(フォルダは1分ごとと、muse.ai のページを開いたときに確認します。すぐ出したいときは「今すぐ確認」を押します)。
    ボタンが使えない場合(v0.7.3 以前からの更新など)は、`chrome://extensions` で Muse Helper の再読み込みボタン(↻)を押し、muse.ai のタブを再読み込みします。
 
 開発中の最新のコードを使う場合は、Releases の代わりにこのリポジトリを `git clone` して、同じ手順で読み込んでください。`git clone` で入れた場合は、手順 1〜2 の代わりに `git pull` でフォルダを新しくできます。
@@ -80,5 +80,5 @@
 - 会話内の検索は、CSS Custom Highlight API で色を付けるため、Muse の画面に要素を足しません(`search.js`)。
 - 使用ペースの予測は、利用状況を読み取るたびに使用率を記録し(値が変わったとき、または15分ごと。14日分を保持)、その記録から計算しています(`common.js` の `forecast`)。
 - アップデート確認は、service worker(`background.js`)が1時間ごとに GitHub API の `releases/latest` を取得し、タグ(例: `v0.4.0`)を `manifest.json` の `version` と比較しています。リリースのタグは `v<version>` の形式にしてください。
-- 「再読み込みして更新」は、パッケージ化されていない拡張機能(`chrome.management.getSelf()` の `installType` が `development`)のときだけ使えます。service worker が拡張機能のフォルダの `manifest.json` を `fetch(chrome.runtime.getURL('manifest.json'))` で読み、今動いている版より新しければボタンを出します。押すと `chrome.runtime.reload()` で再読み込みし、押したタブは自分で、ほかの muse.ai のタブは localStorage(`museHelperReloadAt`)の `storage` イベントを合図に読み込み直します(タブの URL を見る権限は使いません)。
+- 「再読み込みして更新」は、パッケージ化されていない拡張機能(`chrome.management.getSelf()` の `installType` が `development`)のときだけ使えます。service worker が拡張機能のフォルダの `manifest.json` を `fetch(chrome.runtime.getURL('manifest.json'))` で読み、今動いている版より新しければボタンを出します。フォルダの確認は GitHub の確認(1時間ごと)とは別に、1分ごと(`chrome.alarms`)と、muse.ai のページを開いたとき(`content.js` からのメッセージ)に行い、変わったときだけ保存します。押すと `chrome.runtime.reload()` で再読み込みし、押したタブは自分で、ほかの muse.ai のタブは localStorage(`museHelperReloadAt`)の `storage` イベントを合図に読み込み直します(タブの URL を見る権限は使いません)。
 - いずれの機能も Muse の画面や内部実装に依存するため、Muse 側の更新で動かなくなる可能性があります。

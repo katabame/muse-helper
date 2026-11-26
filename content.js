@@ -424,6 +424,9 @@
     });
   } catch (e) {}
 
+  // ページを開いたら、インストールしたフォルダが新しくなっていないか確認する(1分ごとの確認を待たずにボタンを出すため)
+  try { chrome.runtime.sendMessage({ type: 'museCheckDisk' }, () => void chrome.runtime.lastError); } catch (e) {}
+
   // ほかのタブで「再読み込みして更新」が押されたら、拡張機能の再読み込みを待ってからこのタブも読み込み直す
   window.addEventListener('storage', (e) => {
     if (e.key !== MuseHelper.RELOAD_SIGNAL || !e.newValue) return;

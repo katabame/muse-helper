@@ -2,6 +2,7 @@
 importScripts('common.js');
 const { UPDATE_KEY, API_LATEST } = MuseHelper;
 const ALARM = 'museUpdateCheck';
+const DISK_ALARM = 'museDiskCheck'; // フォルダの確認(1分ごと。GitHub には通信しない)
 
 async function check() {
   const prev = (await chrome.storage.local.get(UPDATE_KEY))[UPDATE_KEY] || {};
@@ -42,6 +43,16 @@ async function diskVersion() {
   }
 }
 // ストアからインストールした拡張機能の manifest には update_url が入る
+// フォルダだけを確認する(1分ごと・muse.ai のページを開いたとき)。変わったときだけ保存する
+// (毎回保存すると、すべてのタブでバッジの描き直しが起きるため)
+async function checkDisk() {
+  const [disk, unpacked] = await Promise.all([diskVersion(), isUnpacked()]);
+  const prev = (await chrome.storage.local.get(UPDATE_KEY))[UPDATE_KEY] || {};
+  if (prev.disk === disk && prev.unpacked === unpacked) return prev;
+  const next = { ...prev, disk, unpacked };
+  await chrome.storage.local.set({ [UPDATE_KEY]: next });
+  return next;
+}
 async function isUnpacked() {
   try { return (await chrome.management.getSelf()).installType === 'development'; } catch (e) {}
   return !chrome.runtime.getManifest().update_url;
@@ -53,6 +64,7 @@ function reloadSelf() {
 
 function schedule() {
   chrome.alarms.create(ALARM, { periodInMinutes: 60 });
+  chrome.alarms.create(DISK_ALARM, { periodInMinutes: 1 });
   check();
   scheduleReset();
 }
@@ -61,6 +73,7 @@ chrome.runtime.onInstalled.addListener(schedule); // インストール時・拡
 chrome.runtime.onStartup.addListener(schedule); // Chrome 起動時
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === ALARM) check();
+  if (a.name === DISK_ALARM) checkDisk();
   if (a.name.startsWith(RESET_ALARM)) onReset(Number(a.name.slice(RESET_ALARM.length)));
 });
 
@@ -153,6 +166,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 設定パネルの「今すぐ確認」
   if (msg && msg.type === 'museCheckUpdate') {
     check().then(sendResponse);
+    return true;
+  }
+  // muse.ai のページを開いたときのフォルダの確認
+  if (msg && msg.type === 'museCheckDisk') {
+    checkDisk().then(sendResponse);
     return true;
   }
   // 「再読み込みして更新」
