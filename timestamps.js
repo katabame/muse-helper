@@ -133,7 +133,7 @@
       sep.setAttribute('role', 'separator');
       sep.style.cssText =
         'display:flex;align-items:center;gap:10px;width:100%;flex:none;box-sizing:border-box;' +
-        'margin:16px 0 12px;padding:0 8px;font:11px/1.2 system-ui,sans-serif;opacity:.55;pointer-events:none;white-space:nowrap;';
+        'margin:16px 0 12px;padding:0 8px;font:11px/1.2 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;opacity:.55;pointer-events:none;white-space:nowrap;';
       for (let i = 0; i < 3; i++) {
         const part = document.createElement('span');
         if (i !== 1) part.style.cssText = 'flex:1;height:1px;background:currentColor;opacity:.35;';
@@ -173,7 +173,7 @@
       label.className = CLS;
       label.style.cssText =
         'display:block;width:100%;flex:0 0 100%;box-sizing:border-box;padding:2px 8px 0;' +
-        'font:11px/1.2 system-ui,sans-serif;opacity:.5;pointer-events:none;';
+        'font:11px/1.2 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;opacity:.5;pointer-events:none;';
       const span = document.createElement('span');
       span.style.cssText = 'pointer-events:auto;cursor:default;';
       label.appendChild(span);

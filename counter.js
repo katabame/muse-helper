@@ -15,7 +15,7 @@
     counter.className = 'text-text-secondary bg-fill-blur-thick backdrop-blur-elevation-01 rounded-full px-2 py-0.5';
     counter.style.cssText =
       'position:absolute;bottom:100%;margin-bottom:6px;z-index:1;pointer-events:none;' +
-      'font:12px/1.2 system-ui,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;display:none;';
+      'font:12px/1.2 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;display:none;';
   }
 
   function update() {

@@ -80,5 +80,6 @@
 - 会話内の検索は、CSS Custom Highlight API で色を付けるため、Muse の画面に要素を足しません(`search.js`)。
 - 使用ペースの予測は、利用状況を読み取るたびに使用率を記録し(値が変わったとき、または15分ごと。14日分を保持)、その記録から計算しています(`common.js` の `forecast`)。
 - アップデート確認は、service worker(`background.js`)が1時間ごとに GitHub API の `releases/latest` を取得し、タグ(例: `v0.4.0`)を `manifest.json` の `version` と比較しています。リリースのタグは `v<version>` の形式にしてください。
+- Muse Helper の表示の説明(ツールチップ)は、Chrome 標準のもの(`title` 属性)だと OS のフォントで描かれ、環境によって漢字が中国語の字形になるため、`tooltip.js` が `title` を `data-muse-tip` に移して自前で表示しています(日本語のフォントを優先、`lang="ja"`)。
 - 「再読み込みして更新」は、パッケージ化されていない拡張機能(`chrome.management.getSelf()` の `installType` が `development`)のときだけ使えます。service worker が拡張機能のフォルダの `manifest.json` を `fetch(chrome.runtime.getURL('manifest.json'))` で読み、今動いている版より新しければボタンを出します。フォルダの確認は GitHub の確認(1時間ごと)とは別に、1分ごと(`chrome.alarms`)と、muse.ai のページを開いたとき(`content.js` からのメッセージ)に行い、変わったときだけ保存します。押すと `chrome.runtime.reload()` で再読み込みし、押したタブは自分で、ほかの muse.ai のタブは localStorage(`museHelperReloadAt`)の `storage` イベントを合図に読み込み直します(タブの URL を見る権限は使いません)。
 - いずれの機能も Muse の画面や内部実装に依存するため、Muse 側の更新で動かなくなる可能性があります。

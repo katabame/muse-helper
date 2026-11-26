@@ -696,7 +696,7 @@
     wrap.style.cssText = 'position:relative;';
     const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img',
       'aria-label': `直近28日の送信数。合計 ${list.reduce((a, b) => a + b.sent, 0)}件、最多 ${max}件` });
-    svg.style.cssText = 'display:block;overflow:visible;font:10px system-ui,sans-serif;';
+    svg.style.cssText = 'display:block;overflow:visible;font:10px system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;';
     wrap.appendChild(svg);
     box.appendChild(wrap);
 
@@ -786,7 +786,7 @@
     const wrap = el('div', '');
     wrap.style.cssText = 'position:relative;margin-top:4px;';
     const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img', 'aria-label': '曜日と時間帯ごとの送信数' });
-    svg.style.cssText = 'display:block;overflow:visible;font:10px system-ui,sans-serif;';
+    svg.style.cssText = 'display:block;overflow:visible;font:10px system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;';
     wrap.appendChild(svg);
     box.appendChild(wrap);
     WD.forEach((w, r) => {
@@ -1175,7 +1175,7 @@
     const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img',
       'aria-label': `今週の使用率の推移。現在 ${f.used}%、目安 ${Math.round(f.target)}%` +
         (prevNow != null ? `、先週の同じ時点 ${Math.round(prevNow)}%` : '') });
-    svg.style.cssText = 'display:block;overflow:visible;font:10px system-ui,sans-serif;';
+    svg.style.cssText = 'display:block;overflow:visible;font:10px system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;';
     wrap.appendChild(svg);
     box.appendChild(wrap);
 

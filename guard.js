@@ -35,7 +35,7 @@
     chip.setAttribute('aria-label', '送信の確認');
     const dark = document.documentElement.classList.contains('dark');
     chip.style.cssText = 'position:absolute;bottom:100%;margin-bottom:6px;z-index:2;display:flex;align-items:center;gap:8px;' +
-      'padding:6px 6px 6px 12px;border-radius:12px;font:12px/1.4 system-ui,sans-serif;white-space:nowrap;pointer-events:auto;' +
+      'padding:6px 6px 6px 12px;border-radius:12px;font:12px/1.4 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;white-space:nowrap;pointer-events:auto;' +
       `color:${dark ? '#f0efec' : '#1a1a19'};background:${dark ? '#262624' : '#fff'};border:1px solid #dc2626;box-shadow:0 4px 16px rgba(0,0,0,.18);`;
     const msg = document.createElement('span');
     msg.textContent = `残り ${r}% です。送信しますか？`;

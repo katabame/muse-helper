@@ -62,7 +62,7 @@
     box.setAttribute('aria-label', 'キーボードショートカット');
     const dark = document.documentElement.classList.contains('dark');
     box.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483001;box-sizing:border-box;' +
-      'width:min(380px,calc(100vw - 32px));padding:14px 16px;border-radius:14px;font:13px/1.5 system-ui,sans-serif;pointer-events:auto;' +
+      'width:min(380px,calc(100vw - 32px));padding:14px 16px;border-radius:14px;font:13px/1.5 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;pointer-events:auto;' +
       `box-shadow:0 8px 32px rgba(0,0,0,.25);background:${dark ? '#262624' : '#fff'};color:${dark ? '#f0efec' : '#1a1a19'};` +
       `border:1px solid ${dark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.1)'};`;
     const h = document.createElement('div');

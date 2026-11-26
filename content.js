@@ -119,11 +119,13 @@
     el.id = 'muse-usage-badge';
     el.style.cssText = [
       'position:fixed', 'top:10px', 'right:110px', 'z-index:2147483647',
-      'font:12px/1.3 system-ui,-apple-system,"Hiragino Sans","Yu Gothic UI",sans-serif',
+      'font:12px/1.3 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif',
       'color:#fff', 'background:rgba(30,30,34,.92)', 'border:1px solid rgba(255,255,255,.18)',
       'border-radius:10px', 'padding:6px 10px', 'cursor:grab', 'user-select:none',
       'box-shadow:0 2px 10px rgba(0,0,0,.35)', 'min-width:120px',
     ].join(';');
+    el.lang = 'ja';
+    MuseHelper.tooltip.bind(el); // 説明は tooltip.js の自前の表示で出す(el.title はそのまま読み書きできる)
     big = document.createElement('div');
     big.style.cssText = 'font-size:15px;font-weight:700;white-space:nowrap';
     small = document.createElement('div');

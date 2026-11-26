@@ -18,7 +18,7 @@
     ::highlight(${HL_CUR}) { background-color: #eda100; color: #000; }
     #${BAR} { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2147483000; box-sizing: border-box;
       width: min(520px, calc(100vw - 32px)); display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px;
-      font: 13px/1.4 system-ui, sans-serif; color: #1a1a19; background: #fff; border: 1px solid rgba(0,0,0,.1);
+      font: 13px/1.4 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif; color: #1a1a19; background: #fff; border: 1px solid rgba(0,0,0,.1);
       border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
     html.dark #${BAR} { color: #f0efec; background: #262624; border-color: rgba(255,255,255,.1); }
     #${BAR} input { all: unset; flex: 1; min-width: 0; padding: 4px 0; }

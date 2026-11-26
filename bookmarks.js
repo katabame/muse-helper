@@ -39,7 +39,7 @@
 
     #${PANEL} { position: fixed; top: 64px; right: 16px; z-index: 2147483000; width: min(360px, calc(100vw - 32px));
       max-height: min(70vh, 640px); display: flex; flex-direction: column; box-sizing: border-box;
-      font: 13px/1.45 system-ui, sans-serif; color: #1a1a19; background: #fff; border: 1px solid rgba(0,0,0,.1);
+      font: 13px/1.45 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif; color: #1a1a19; background: #fff; border: 1px solid rgba(0,0,0,.1);
       border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.18); pointer-events: auto; }
     html.dark #${PANEL} { color: #f0efec; background: #262624; border-color: rgba(255,255,255,.1); }
     #${PANEL} button { all: unset; box-sizing: border-box; cursor: pointer; }
@@ -53,9 +53,9 @@
     #${PANEL} .bm-q { all: unset; box-sizing: border-box; flex: 1; min-width: 0; padding: 4px 8px; font-size: 12px;
       border: 1px solid rgba(128,128,128,.4); border-radius: 6px; }
     #${PANEL} .bm-q:focus { border-color: #2a78d6; }
-    #${PANEL} .bm-sort { font: 12px system-ui, sans-serif; color: inherit; background: transparent; border: 1px solid rgba(128,128,128,.4); border-radius: 6px; padding: 2px 4px; }
+    #${PANEL} .bm-sort { font: 12px system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif; color: inherit; background: transparent; border: 1px solid rgba(128,128,128,.4); border-radius: 6px; padding: 2px 4px; }
     html.dark #${PANEL} .bm-sort option { background: #262624; }
-    .muse-bm-count { flex: none; margin-left: auto; padding-left: 6px; font: 11px/1 system-ui, sans-serif; color: #c98500; pointer-events: none; }
+    .muse-bm-count { flex: none; margin-left: auto; padding-left: 6px; font: 11px/1 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif; color: #c98500; pointer-events: none; }
     .muse-bm-count::before { content: "★" attr(data-count); }
     #${PANEL} .bm-note { margin: 0 8px 8px; padding: 6px 8px; border-radius: 8px; font-size: 12px; background: rgba(217,119,6,.14); }
     #${PANEL} .bm-empty { padding: 4px 8px 8px; font-size: 12px; opacity: .65; }

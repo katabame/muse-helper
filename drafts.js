@@ -176,10 +176,11 @@
     const list = history[chatKey()] || [];
     if (!list.length || !chip) return;
     menu = document.createElement('div');
+    menu.id = 'muse-helper-draft-menu';
     menu.setAttribute('role', 'menu');
     menu.className = 'text-text-primary bg-fill-blur-thick backdrop-blur-elevation-01 shadow-blur-elevation-01';
     menu.style.cssText = 'position:absolute;bottom:100%;margin-bottom:6px;z-index:2;pointer-events:auto;border-radius:12px;padding:4px;' +
-      'width:min(380px,calc(100vw - 48px));font:12px/1.4 system-ui,sans-serif;';
+      'width:min(380px,calc(100vw - 48px));font:12px/1.4 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;';
     list.forEach((h) => {
       const item = document.createElement('div');
       item.style.cssText = 'display:flex;align-items:center;gap:2px;';
@@ -250,7 +251,7 @@
     chip.className = 'text-text-primary bg-fill-blur-thick backdrop-blur-elevation-01 shadow-blur-elevation-01 rounded-full';
     chip.style.cssText =
       'position:absolute;bottom:100%;margin-bottom:6px;z-index:1;pointer-events:auto;display:none;' +
-      'align-items:center;font:12px/1.2 system-ui,sans-serif;white-space:nowrap;overflow:hidden;';
+      'align-items:center;font:12px/1.2 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;white-space:nowrap;overflow:hidden;';
     const btnCss = 'background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:5px 10px;';
     restoreBtn = document.createElement('button');
     restoreBtn.type = 'button';
