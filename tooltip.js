@@ -14,6 +14,7 @@
   let tip = null; // 表示中のツールチップ
   let target = null; // ツールチップを出す(出している)要素
   let timer = 0;
+  let pressed = false; // マウスのボタンを押している間(ドラッグ中など)は出さない
 
   const isOurs = (e) => !!(e && e.closest && e.closest(OURS));
 
@@ -56,6 +57,8 @@
 
   document.addEventListener('mouseover', (ev) => {
     if (!M.alive()) return;
+    // ドラッグ中(バッジを動かしている間など)は、要素がマウスについて動くので mouseover が起き続ける。出さない
+    if (pressed || ev.buttons) { hide(); return; }
     const start = ev.target && ev.target.closest ? ev.target : null;
     // マウスの下の要素から上にたどり、説明のある Muse Helper の要素を探す
     let e = start && start.closest('[title], [data-muse-tip]');
@@ -65,12 +68,16 @@
     hide();
     if (!e || !e.dataset.museTip) return;
     target = e;
-    timer = setTimeout(() => { if (target === e) show(e); }, DELAY);
+    timer = setTimeout(() => { if (target === e && !pressed) show(e); }, DELAY);
   }, true);
   document.addEventListener('mouseout', (ev) => {
     if (target && !(ev.relatedTarget && target.contains(ev.relatedTarget))) hide();
   }, true);
-  ['pointerdown', 'keydown', 'scroll', 'blur'].forEach((t) => window.addEventListener(t, hide, true));
+  window.addEventListener('pointerdown', () => { pressed = true; hide(); }, true);
+  ['pointerup', 'pointercancel'].forEach((t) => window.addEventListener(t, () => { pressed = false; }, true));
+  // ボタンを離したのがウィンドウの外でも、戻ってきたら押していない状態に戻す
+  window.addEventListener('blur', () => { pressed = false; hide(); }, true);
+  ['keydown', 'scroll'].forEach((t) => window.addEventListener(t, hide, true));
 
   // 表示中や、マウスを乗せたままの要素の title が書き換わったら、すぐ移し替える
   new MutationObserver((list) => {
