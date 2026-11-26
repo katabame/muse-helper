@@ -70,6 +70,9 @@
         label: typeof d.usageRowLabel === 'string' ? d.usageRowLabel : '',
         topupBalance: Number.isFinite(d.topupBalance) ? d.topupBalance : null,
         topupTotal: Number.isFinite(d.topupTotal) ? d.topupTotal : null,
+        // 追加のトークンの表示(「0%使用済み(残り30億トークン)」)。topupBalance は画面のトークン数とは単位が違う
+        // (30億トークンのとき 120000000)ので、残りはこの文字列から読む
+        topupLabel: typeof d.topupRowValueLabel === 'string' ? d.topupRowValueLabel : '',
         at,
       },
     });

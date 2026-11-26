@@ -68,7 +68,8 @@
       used: d.percentUsed,
       reset: r ? `${r.getMonth() + 1}月${r.getDate()}日` : (state && state.reset) || '',
       resetAt: d.resetsAt || null,
-      extra: d.topupBalance > 0 ? MuseHelper.bigNum(d.topupBalance) : '',
+      // 残りのトークンは Muse の表示用の文字列から読む(topupBalance は画面のトークン数と単位が違う)
+      extra: (String(d.topupLabel || '').match(/残り([\d.,]+[億万千]?)トークン/) || [])[1] || '',
       quotaStatus: d.quotaStatus || '',
       source: 'query',
       at: Math.min(d.at || Date.now(), Date.now()),
