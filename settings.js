@@ -113,7 +113,27 @@
     s.appendChild(p);
     return s;
   }
-  const ICON_CLOCK = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2';
+  // 設定画面のサイドバーの Muse Helper のアイコン。拡張機能のアイコン(icons/icon.svg)の「手書きの m」と ✦ を、
+  // Muse のほかの項目のアイコンに合わせて単色(currentColor)の線で描く
+  function logoIcon(size) {
+    const s = document.createElementNS(SVG_NS, 'svg');
+    s.setAttribute('width', size);
+    s.setAttribute('height', size);
+    s.setAttribute('viewBox', '8 16 108 108');
+    s.setAttribute('aria-hidden', 'true');
+    const m = document.createElementNS(SVG_NS, 'path');
+    m.setAttribute('d', 'M16 50 L31 28 L25 90 L55 32 L50 90 L79 44 L77 78');
+    m.setAttribute('fill', 'none');
+    m.setAttribute('stroke', 'currentColor');
+    m.setAttribute('stroke-width', '9');
+    m.setAttribute('stroke-linecap', 'round');
+    m.setAttribute('stroke-linejoin', 'round');
+    const star = document.createElementNS(SVG_NS, 'path');
+    star.setAttribute('d', 'M101 86 Q102.8 98.2 115 100 Q102.8 101.8 101 114 Q99.2 101.8 87 100 Q99.2 98.2 101 86 Z');
+    star.setAttribute('fill', 'currentColor');
+    s.append(m, star);
+    return s;
+  }
   const ICON_CHECK = 'M5 12.5l4.5 4.5L19 7.5';
 
   function el(tag, cls, text) {
@@ -154,7 +174,7 @@
     if (icon) {
       const ref = sample.querySelector(':scope > span svg');
       const size = (ref && ref.getAttribute('width')) || '20';
-      icon.replaceChildren(svg(size, ICON_CLOCK, 1.8));
+      icon.replaceChildren(logoIcon(size));
     }
     return b;
   }
