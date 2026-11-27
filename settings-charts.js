@@ -17,6 +17,7 @@
 
   // ---------- 使用率の推移グラフ ----------
   // 今週(週の始まり〜リセット)の使用率の折れ線と、目安(週の経過割合)の線、平均ペースでの予測(破線)。
+  // リセット前に上限に達する見込みなら、その時刻に縦線と帯を引き、グラフの上に文でも出す。
   // 先週の記録があれば、1週間ずらして同じ位置に重ねる(そのときは凡例を出す)。
   // 目安・予測・上限・先週は線の端に直接ラベルを付ける。マウスを乗せると各記録の値が出る。
 
@@ -36,6 +37,22 @@
       return;
     }
     box.style.display = '';
+    // 平均・直近のペースのうち、リセット前に先に上限に達する見込みのほう(なければ null)
+    const limit = [f.avg, f.recent].filter((p) => p && !p.insufficient && p.hitAt != null && p.hitAt > f.at)
+      .sort((a, b) => a.hitAt - b.hitAt)[0] || null;
+    if (limit) {
+      // グラフの上に文で(色だけに頼らないよう、警告の記号と文字で)
+      const which = limit === f.recent ? '直近のペース' : '今週の平均ペース';
+      const head = el('div', 'text-caption-1 text-text-primary');
+      head.style.cssText = 'display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;';
+      const mark = el('span', '', '⚠');
+      mark.style.cssText = 'color:var(--muse-helper-critical);';
+      const text = el('span', '');
+      text.append(`${which}が続くと `, el('b', '', `${M.when(limit.hitAt, fmt12)}ごろ`),
+        ` に上限に達する見込みです(${M.until(limit.hitAt - Date.now())}・リセットの${M.duration(Math.max(M.HOUR, Math.round((f.resetAt - limit.hitAt) / M.HOUR) * M.HOUR))}前)`);
+      head.append(mark, text);
+      box.appendChild(head);
+    }
     // 今週の記録(最後に値が下がった後)+ 週の始まり(0%)+ 最新値
     let pts = history.filter((p) => p.at >= f.weekStart && p.at <= f.at && Number.isFinite(p.used)).sort((a, b) => a.at - b.at);
     for (let i = pts.length - 1; i > 0; i--) if (pts[i].used < pts[i - 1].used) { pts = pts.slice(i); break; }
@@ -115,15 +132,27 @@
     const tx = f.weekStart + (f.resetAt - f.weekStart) * 0.15;
     label(x(tx) - 4, y(15) - 6, '目安', 'end');
 
-    // 平均ペースでの予測(破線)
+    // 予測(破線)。平均ペースの線に加え、直近ペースのほうが早く上限に達するならその線も(細かい破線)
     const series = 'var(--muse-helper-series)';
-    if (f.avg && !f.avg.insufficient) {
-      const endT = f.avg.hitAt != null ? f.avg.hitAt : f.resetAt;
-      const endV = f.avg.hitAt != null ? 100 : f.avg.atReset;
+    const projLine = (p, dash) => {
+      const endT = p.hitAt != null ? p.hitAt : f.resetAt;
+      const endV = p.hitAt != null ? 100 : p.atReset;
       s('line', { x1: x(f.at), y1: y(f.used), x2: x(endT), y2: y(endV), stroke: series, 'stroke-width': '2',
-        'stroke-dasharray': '5 4', 'stroke-opacity': '0.8', 'stroke-linecap': 'round' }, svg);
-      if (f.avg.hitAt == null) right.push({ y: y(endV) + 3.5, text: `予測 ${Math.round(endV)}%` });
-      else label(x(endT), y(100) - 4, `${M.when(endT, fmt12)} 上限`, 'middle');
+        'stroke-dasharray': dash, 'stroke-opacity': '0.8', 'stroke-linecap': 'round' }, svg);
+      if (p.hitAt == null) right.push({ y: y(endV) + 3.5, text: `予測 ${Math.round(endV)}%` });
+    };
+    if (f.avg && !f.avg.insufficient) projLine(f.avg, '5 4');
+    if (limit && limit === f.recent) projLine(f.recent, '2 4');
+
+    // 上限に達する見込みの時刻: 縦線と、そこからリセットまで(使えない期間)の薄い帯
+    if (limit) {
+      const hx = x(limit.hitAt);
+      s('rect', { x: hx, y: T, width: Math.max(0, x(f.resetAt) - hx), height: H - T - B,
+        fill: 'var(--muse-helper-critical)', 'fill-opacity': '0.1' }, svg);
+      s('line', { x1: hx, x2: hx, y1: T, y2: H - B, stroke: 'var(--muse-helper-critical)', 'stroke-width': '1.5', 'stroke-dasharray': '3 3' }, svg);
+      // 文字は縦線の左に(右に余白があれば右に)
+      const toRight = W - R - hx > 115;
+      label(hx + (toRight ? 4 : -4), y(100) - 4, `${M.when(limit.hitAt, fmt12)}ごろ上限`, toRight ? 'start' : 'end');
     }
 
     // 先週(今週の線の下に描く)

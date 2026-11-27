@@ -68,8 +68,8 @@
     .${PANE} [role="radio"][aria-checked="true"] .muse-helper-check { visibility: visible; }
     /* 使用率グラフの系列色(既定パレットの1番目。Muse のダークモードは <html class="dark">) */
     /* 先週の線は2番目(オレンジ)。どちらのモードも検証スクリプトで確認済み */
-    .${PANE} .muse-helper-chart { --muse-helper-series: #2a78d6; --muse-helper-prev: #eb6834; --muse-helper-surface: #fcfcfb; }
-    html.dark .${PANE} .muse-helper-chart { --muse-helper-series: #3987e5; --muse-helper-prev: #d95926; --muse-helper-surface: #1a1a19; }
+    .${PANE} .muse-helper-chart { --muse-helper-series: #2a78d6; --muse-helper-prev: #eb6834; --muse-helper-surface: #fcfcfb; --muse-helper-critical: #dc2626; }
+    html.dark .${PANE} .muse-helper-chart { --muse-helper-series: #3987e5; --muse-helper-prev: #d95926; --muse-helper-surface: #1a1a19; --muse-helper-critical: #f87171; }
     .${PANE} .muse-helper-act-chart { --muse-helper-series: #2a78d6; --muse-helper-surface: #fcfcfb;
       --seq-0: rgba(128,128,128,.12); --seq-1: #d4e4f7; --seq-2: #a3c6ee; --seq-3: #6aa0e2; --seq-4: #2a78d6; --seq-5: #1b4f90; }
     html.dark .${PANE} .muse-helper-act-chart { --muse-helper-series: #3987e5; --muse-helper-surface: #1a1a19;
