@@ -42,7 +42,7 @@ async function diskVersion() {
     return null;
   }
 }
-// ストアからインストールした拡張機能の manifest には update_url が入る
+// リアクションの絵文字の名前(emoji-ja.json)。一度読んだら使い回す
 let emojiCache = null;
 async function emojiNames() {
   if (!emojiCache) {
@@ -54,7 +54,7 @@ async function emojiNames() {
 // ---------- デベロッパーモード: ファイルが変わったら自動で再読み込み ----------
 // デベロッパーモードのとき、muse.ai のタブ(content.js)が1.5秒ごとに museDevCheck を送ってくる。
 // 拡張機能のファイル(manifest.json・background・content scripts・同梱のデータ)の中身のハッシュを、
-// 起動したときのもの(storage.session に保存。service worker が止まって起き直しても引き継ぐ)と比べ、
+// 拡張機能が起動したときのもの(storage.session に保存。service worker が止まって起き直しても引き継ぐ)と比べ、
 // 変わっていれば、書き込みの途中で読まないよう 0.5 秒おいてもう一度確かめてから再読み込みする。
 // 再読み込みすると、開いている muse.ai のタブは content.js が入力中の文章を預けて自動で読み込み直す。
 const DEV_BASE_KEY = 'museDevFilesHash';
@@ -84,6 +84,7 @@ async function devCheck() {
     devLastAt = Date.now();
     const base = (await chrome.storage.session.get(DEV_BASE_KEY))[DEV_BASE_KEY];
     const now = await devHash();
+    // 起動時の記録がなければ(記録の前に確認が来たとき)、今の中身を基準にする
     if (!base) { await chrome.storage.session.set({ [DEV_BASE_KEY]: now }); return { changed: false }; }
     if (now === base) return { changed: false };
     await new Promise((r) => setTimeout(r, 500));
@@ -104,6 +105,8 @@ async function checkDisk() {
   await chrome.storage.local.set({ [UPDATE_KEY]: next });
   return next;
 }
+// パッケージ化されていない(フォルダから読み込んだ)拡張機能か。
+// management が使えなければ manifest で判断する(ストアからインストールした拡張機能の manifest には update_url が入る)
 async function isUnpacked() {
   try { return (await chrome.management.getSelf()).installType === 'development'; } catch (e) {}
   return !chrome.runtime.getManifest().update_url;
@@ -113,11 +116,18 @@ function reloadSelf() {
   chrome.runtime.reload();
 }
 
+// 拡張機能が起動したときのファイルの中身を記録する(デベロッパーモードをあとからオンにしても、
+// それまでに書き換えたファイルを検出できるように)
+async function recordDevBase() {
+  try { await chrome.storage.session.set({ [DEV_BASE_KEY]: await devHash() }); } catch (e) {}
+}
+
 function schedule() {
   chrome.alarms.create(ALARM, { periodInMinutes: 60 });
   chrome.alarms.create(DISK_ALARM, { periodInMinutes: 1 });
   check();
   scheduleReset();
+  recordDevBase();
 }
 
 chrome.runtime.onInstalled.addListener(schedule); // インストール時・拡張機能の更新時
@@ -213,7 +223,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes[USAGE_KEY]) scheduleReset();
 });
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // 設定パネルの「今すぐ確認」
   if (msg && msg.type === 'museCheckUpdate') {
     check().then(sendResponse);
@@ -240,7 +250,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return;
   }
   if (msg && msg.type === 'museNotify' && msg.id && msg.title) {
-    notify(msg, msg.focusTab ? _sender.tab : null).then(sendResponse);
+    notify(msg, msg.focusTab ? sender.tab : null).then(sendResponse);
     return true;
   }
 });

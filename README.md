@@ -72,7 +72,7 @@
   このクエリは設定画面を開いたときに初めて作られるため、その取得処理を覚えておき、以降は `queryClient.fetchQuery` で5分ごとに取り直しています。タブが裏にあっても取り直し、最後に取得を試みた時刻を localStorage(`museHelperUsageFetchAt`)でタブ間に共有して、複数のタブから重ねて取りに行かないようにしています(裏のタブのタイマーは Chrome により1分に1回程度に間引かれることがあります)。
   あわせて、その取得で使われた Next.js のサーバーアクションの呼び出し(`Next-Action` ヘッダーと引数)を muse.ai の localStorage(`museHelperUsageAction`)に覚えておき、ページを開き直したあとは設定画面を開かなくても同じ呼び出しで取り直します。Muse の更新でアクションが変わって2回続けて失敗したときは「自動更新は停止中」になるので、設定画面の「一般」を一度開くと覚え直します。
   内部データが取れないときは、設定画面の `role="progressbar"` (`aria-valuenow`) と周辺のテキストを DOM から読み取ります(`content.js`)。
-- 設定画面の「Muse Helper」項目は、設定ダイアログ(見出し「設定」の `role="dialog"`)を検出し、サイドバーと右ペインに要素を差し込んで表示しています(`settings.js`)。
+- 設定画面の「Muse Helper」項目は、設定ダイアログ(見出し「設定」の `role="dialog"`)を検出し、サイドバーと右ペインに要素を差し込んで表示しています(`settings.js`。グラフは `settings-charts.js`)。
 - メッセージ時刻は、React の内部データ(メッセージ要素の fiber に保持された `createdAt`)から読み取っています(`timestamps.js`、MAIN world で動作)。
 - 会話の統計・ブックマーク・ショートカットは、画面に読み込まれているメッセージ(`data-message-id` を持つ要素)と、`timestamps.js` が付けた時刻を使います。Muse がまだ読み込んでいない古いメッセージは、統計に含まれません。ブックマークからの移動では、会話の一覧を一番上までスクロールして Muse に過去のメッセージを読み込ませ、見つかるまで繰り返します(6秒続けて増えなければ打ち切り)。
 - ブックマークの本文は、許可したタグだけの木構造(JSON)にして保存し、表示するときは `createElement` で組み立て直します(HTML の文字列は使いません。リンクは http/https のみ)。v0.7.1 以前に保存したブックマークは冒頭160文字だけなので、そのメッセージが画面に読み込まれたときに全文へ入れ替えます。保存量が増えるため `unlimitedStorage` 権限を使います。
@@ -85,5 +85,6 @@
 - 画面の「相手」の表記(ブックマーク・会話の統計・検索の範囲・返信の通知・リアクションの説明など)には、アシスタントの名前を使います。名前は Muse の画面上部のアバター(`data-hatch-avatar-accessory="status-pill"` の `aria-label`)から覚えて `museAssistantName` に保存します(分からないうちは「相手」)。
 - リアクションの絵文字にマウスを乗せると、絵文字を大きく表示し、日本語の名前を添えたツールチップを出します(`reactions.js`)。名前は Unicode CLDR の日本語の読み上げ名から作った `emoji-ja.json` を使います(ライセンスは `THIRD_PARTY_NOTICES.md`)。
 - Muse Helper の表示の説明(ツールチップ)は、Chrome 標準のもの(`title` 属性)だと OS のフォントで描かれ、環境によって漢字が中国語の字形になるため、`tooltip.js` が `title` を `data-muse-tip` に移して自前で表示しています(日本語のフォントを優先、`lang="ja"`)。
-- 「再読み込みして更新」は、パッケージ化されていない拡張機能(`chrome.management.getSelf()` の `installType` が `development`)のときだけ使えます。service worker が拡張機能のフォルダの `manifest.json` を `fetch(chrome.runtime.getURL('manifest.json'))` で読み、今動いている版より新しければボタンを出します。フォルダの確認は GitHub の確認(1時間ごと)とは別に、1分ごと(`chrome.alarms`)と、muse.ai のページを開いたとき(`content.js` からのメッセージ)に行い、変わったときだけ保存します。押すと `chrome.runtime.reload()` で再読み込みし、押したタブは自分で、ほかの muse.ai のタブは localStorage(`museHelperReloadAt`)の `storage` イベントを合図に読み込み直します(タブの URL を見る権限は使いません)。
+- 「再読み込みして更新」は、パッケージ化されていない拡張機能(`chrome.management.getSelf()` の `installType` が `development`)のときだけ使えます。service worker が拡張機能のフォルダの `manifest.json` を `fetch(chrome.runtime.getURL('manifest.json'))` で読み、今動いている版より新しければボタンを出します。フォルダの確認は GitHub の確認(1時間ごと)とは別に、1分ごと(`chrome.alarms`)と、muse.ai のページを開いたとき(`content.js` からのメッセージ)に行い、変わったときだけ保存します。押すと `chrome.runtime.reload()` で再読み込みします。
+- 拡張機能が再読み込み・更新されると、開いている muse.ai のタブの古いスクリプトが、入力中の文章を預けてタブを読み込み直します(`content.js` の `orphanCheck`)。古いスクリプトからは無効化・削除も同じに見えるため、ページから読めるように公開したアイコン(`web_accessible_resources` の `icons/icon16.png`)を読み込めるか(= 拡張機能が動いているか)を確かめ、読めるときだけ読み込み直します(無効化したときはタブをそのままにします)。
 - いずれの機能も Muse の画面や内部実装に依存するため、Muse 側の更新で動かなくなる可能性があります。

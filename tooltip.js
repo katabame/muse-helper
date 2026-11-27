@@ -7,9 +7,9 @@
 (() => {
   'use strict';
   const M = MuseHelper;
-  const OURS = '[id^="muse-"], [class^="muse-"], [class*=" muse-"]';
+  const OURS = M.OWN;
   const DELAY = 500;
-  const FONT = 'system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif';
+  const FONT = M.FONT;
 
   let tip = null; // 表示中のツールチップ
   let target = null; // ツールチップを出す(出している)要素

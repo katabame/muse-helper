@@ -39,15 +39,11 @@
     });
   }
 
-  function findEl(id) {
-    return [...document.querySelectorAll('[data-message-id]')].find((x) => x.getAttribute('data-message-id') === id) || null;
-  }
-
   function tick() {
     if (!pending.size || !M.alive()) return;
     const now = Date.now();
     for (const [id, p] of pending) {
-      const el = findEl(id);
+      const el = M.findMessage(id);
       if (!el) { pending.delete(id); continue; } // 会話を切り替えたなど
       const text = M.messageText(el);
       if (text !== p.text) { p.text = text; p.changedAt = now; }
@@ -99,13 +95,13 @@
   function notifyReply(id, p) {
     if (!replyNotify) return;
     if (document.visibilityState === 'visible' && document.hasFocus()) return; // 見ているなら通知しない
-    const title = document.title.replace(/\s*[|\-–—]\s*Muse\s*$/i, '').trim();
+    const title = M.chatTitle();
     const head = p.text.length > 80 ? `${p.text.slice(0, 80)}…` : p.text;
     try {
       chrome.runtime.sendMessage({
         type: 'museNotify', id: `reply:${id}`, pref: M.REPLY_NOTIFY_KEY, focusTab: true,
         title: M.assistantName() ? `${M.assistantName()}から返信が届きました` : '返信が届きました',
-        message: replyPreview && head ? head : `${title && !/^muse$/i.test(title) ? `「${title}」に` : ''}返信が届きました。クリックすると開きます。`,
+        message: replyPreview && head ? head : `${title ? `「${title}」に` : ''}返信が届きました。クリックすると開きます。`,
       }, () => void chrome.runtime.lastError);
     } catch (e) {}
   }

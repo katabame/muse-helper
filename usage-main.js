@@ -246,6 +246,9 @@
     else if (recipeOk()) { markShared(); replay(); }
   }
 
+  // 調査用: Muse の QueryClient(devtools-main.js から使う。見つかっていなければ探す)
+  window.__museQueryClient = () => qc || findClient();
+
   // 調査用: 今すぐ取り直す(devtools-main.js から使う)
   window.__museUsageRefresh = async () => {
     if (!(qc && opts) && recipeOk()) await replay();

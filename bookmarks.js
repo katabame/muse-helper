@@ -39,7 +39,7 @@
 
     #${PANEL} { position: fixed; top: 64px; right: 16px; z-index: 2147483000; width: min(360px, calc(100vw - 32px));
       max-height: min(70vh, 640px); display: flex; flex-direction: column; box-sizing: border-box;
-      font: 13px/1.45 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif; color: #1a1a19; background: #fff; border: 1px solid rgba(0,0,0,.1);
+      font: 13px/1.45 ${M.FONT}; color: #1a1a19; background: #fff; border: 1px solid rgba(0,0,0,.1);
       border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.18); pointer-events: auto; }
     html.dark #${PANEL} { color: #f0efec; background: #262624; border-color: rgba(255,255,255,.1); }
     #${PANEL} button { all: unset; box-sizing: border-box; cursor: pointer; }
@@ -53,9 +53,9 @@
     #${PANEL} .bm-q { all: unset; box-sizing: border-box; flex: 1; min-width: 0; padding: 4px 8px; font-size: 12px;
       border: 1px solid rgba(128,128,128,.4); border-radius: 6px; }
     #${PANEL} .bm-q:focus { border-color: #2a78d6; }
-    #${PANEL} .bm-sort { font: 12px system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif; color: inherit; background: transparent; border: 1px solid rgba(128,128,128,.4); border-radius: 6px; padding: 2px 4px; }
+    #${PANEL} .bm-sort { font: 12px ${M.FONT}; color: inherit; background: transparent; border: 1px solid rgba(128,128,128,.4); border-radius: 6px; padding: 2px 4px; }
     html.dark #${PANEL} .bm-sort option { background: #262624; }
-    .muse-bm-count { flex: none; margin-left: auto; padding-left: 6px; font: 11px/1 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif; color: #c98500; pointer-events: none; }
+    .muse-bm-count { flex: none; margin-left: auto; padding-left: 6px; font: 11px/1 ${M.FONT}; color: #c98500; pointer-events: none; }
     .muse-bm-count::before { content: "★" attr(data-count); }
     #${PANEL} .bm-note { margin: 0 8px 8px; padding: 6px 8px; border-radius: 8px; font-size: 12px; background: rgba(217,119,6,.14); }
     #${PANEL} .bm-empty { padding: 4px 8px 8px; font-size: 12px; opacity: .65; }
@@ -117,42 +117,10 @@
     svg.appendChild(p);
     return svg;
   }
-  function pencil() {
-    const svg = cross();
-    svg.firstChild.setAttribute('d', 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4');
-    svg.firstChild.setAttribute('stroke-width', '1.8');
-    svg.firstChild.setAttribute('stroke-linejoin', 'round');
-    return svg;
-  }
-  function cross() {
-    const svg = document.createElementNS(SVG, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '14');
-    svg.setAttribute('height', '14');
-    svg.setAttribute('aria-hidden', 'true');
-    const p = document.createElementNS(SVG, 'path');
-    p.setAttribute('d', 'M6 6l12 12M18 6L6 18');
-    p.setAttribute('stroke', 'currentColor');
-    p.setAttribute('stroke-width', '2');
-    p.setAttribute('stroke-linecap', 'round');
-    svg.appendChild(p);
-    return svg;
-  }
-  const el = (tag, cls, text) => {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text != null) e.textContent = text;
-    return e;
-  };
-
-  function docIcon() {
-    const svg = cross();
-    svg.firstChild.setAttribute('d', 'M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5');
-    svg.firstChild.setAttribute('fill', 'none');
-    svg.firstChild.setAttribute('stroke-width', '1.7');
-    svg.firstChild.setAttribute('stroke-linejoin', 'round');
-    return svg;
-  }
+  const pencil = () => M.icon('M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4', { strokeWidth: 1.8 });
+  const cross = () => M.icon(M.ICON_CROSS);
+  const docIcon = () => M.icon('M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5', { strokeWidth: 1.7 });
+  const el = M.el;
 
   // ---------- 本文の保存(書式つき) ----------
   // 本文を、許可したタグだけの木構造にして保存する: 文字列 | { t: タグ, c: [子], h?: リンク先, w?: 1(改行を保つ) }
@@ -400,12 +368,6 @@
     try { chrome.storage.local.set({ [KEY]: marks }); } catch (e) {}
   }
 
-  // 会話の名前(タブのタイトル。サービス名だけなら空)
-  function chatTitle() {
-    const t = document.title.replace(/\s*[|\-–—]\s*Muse\s*$/i, '').trim();
-    return /^muse$/i.test(t) ? '' : t.slice(0, 80);
-  }
-
   function toggle(msgEl) {
     const id = msgEl.getAttribute('data-message-id');
     if (!id) return;
@@ -415,7 +377,7 @@
       const m = M.messages().find((x) => x.el === msgEl);
       marks[id] = {
         path: location.pathname,
-        title: chatTitle(),
+        title: M.chatTitle(),
         text: M.messageText(msgEl).replace(/^(自分|相手|ユーザー|アシスタント)(メッセージ)?[:：]\s*/, '').slice(0, 160),
         at: m && m.at,
         user: !!(m && m.user),
@@ -531,6 +493,9 @@
     }
   }
 
+  // 会話の名前: 今の会話なら「この会話」、ほかはサイドバーで覚えた名前、なければ保存したときのタブの名前
+  const chatName = (b) => (b.path === location.pathname ? 'この会話' : names[b.path] || b.title || '別の会話');
+
   // ---------- 一覧のパネル ----------
   const panel = () => document.getElementById(PANEL);
 
@@ -609,9 +574,8 @@
       body.appendChild(el('div', 'bm-empty', 'メッセージにマウスを乗せ、時刻の横の ☆ を押すと追加できます。'));
       return;
     }
-    const chatName = (b) => (b.path === location.pathname ? 'この会話' : b.title || '別の会話');
     const q = query.trim().toLowerCase();
-    const shown = q ? list.filter((b) => `${b.body ? flat(b.body) : b.text}\n${b.memo || ''}\n${b.title || ''}`.toLowerCase().includes(q)) : list;
+    const shown = q ? list.filter((b) => `${b.body ? flat(b.body) : b.text}\n${b.memo || ''}\n${b.title || ''}\n${names[b.path] || ''}`.toLowerCase().includes(q)) : list;
     if (!shown.length) {
       body.appendChild(el('div', 'bm-empty', '一致するブックマークはありません。'));
       return;
@@ -735,7 +699,7 @@
     go.addEventListener('click', () => jump(id));
     bar.append(back, go);
     body.appendChild(bar);
-    const chat = b.path === location.pathname ? 'この会話' : b.title || '別の会話';
+    const chat = chatName(b);
     body.appendChild(el('div', 'bm-view-meta', `${chat} ・ ${b.at ? M.when(b.at, M.fmt12(), true) : '時刻不明'} ・ ${b.user ? '自分' : b.agent || M.otherName()}`));
     if (b.memo) body.appendChild(el('div', 'bm-memo bm-view-memo', b.memo));
     const doc = el('div', 'bm-doc');
@@ -750,7 +714,7 @@
   }
 
   // ---------- 移動 ----------
-  const findMessage = (id) => [...document.querySelectorAll('[data-message-id]')].find((x) => x.getAttribute('data-message-id') === id);
+  const findMessage = M.findMessage;
   const NOT_LOADED = 'このメッセージはまだ読み込まれていないため、保存した本文を表示しています。';
 
   // 見つからなかったとき: 自動で読み込むか、全文を表示する
@@ -813,14 +777,7 @@
   // 会話の一覧を一番上までスクロールして、Muse に過去のメッセージを読み込ませる。見つかったら移動する。
   // 6秒続けて件数が増えなければ(会話の先頭まで読み込んだ)、あきらめて全文を表示する
   const LOAD_LIMIT = 120000;
-  function scroller() {
-    const first = document.querySelector('[data-message-id]');
-    for (let e = first && first.parentElement; e && e !== document.body; e = e.parentElement) {
-      const oy = getComputedStyle(e).overflowY;
-      if ((oy === 'auto' || oy === 'scroll') && e.scrollHeight > e.clientHeight) return e;
-    }
-    return null;
-  }
+  const scroller = () => M.scrollerOf(document.querySelector('[data-message-id]'));
   function startLoad(id) {
     stopLoad();
     const st = { id, count: document.querySelectorAll('[data-message-id]').length, still: 0, timer: 0, until: Date.now() + LOAD_LIMIT };
@@ -863,13 +820,6 @@
   // - スムーズスクロールを使わず、すぐに動かす(途中の位置で測って合わせ直すと行き過ぎるため)
   // - 位置と件数が 1.2 秒続けて変わらなくなるまで合わせ直す(最短 1.5 秒・最長 10 秒)
   // - その間にユーザーがスクロールやキー操作をしたら、すぐにやめる
-  function scrollerOf(e) {
-    for (let p = e && e.parentElement; p && p !== document.body; p = p.parentElement) {
-      const oy = getComputedStyle(p).overflowY;
-      if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight) return p;
-    }
-    return null;
-  }
   // 見えている範囲(入力欄が会話の上に重なっている分は除く)
   function visibleBox(s) {
     const sr = s.getBoundingClientRect();
@@ -897,7 +847,7 @@
     const tick = () => {
       if (settling !== me) return;
       const target = findMessage(id);
-      const s = target && scrollerOf(target);
+      const s = target && M.scrollerOf(target);
       if (!target || !s) { stop(); if (target) M.scrollToMessage(target, 'center'); return; }
       const r = target.getBoundingClientRect();
       const v = visibleBox(s);

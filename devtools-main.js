@@ -10,7 +10,8 @@
 
   const MSG = 'muse-helper';
   const DEV_ATTR = 'data-muse-helper-dev';
-  const OWN = '#muse-usage-badge, .muse-helper-pane, .muse-helper-nav, #muse-helper-counter, #muse-helper-draft-chip, .muse-bm-btn, #muse-helper-bookmarks, #muse-helper-keys-help, #muse-helper-search, #muse-helper-snippets, #muse-helper-guard, .muse-collapse-btn, .muse-bm-count';
+  // Muse Helper が足した要素(common.js の MuseHelper.OWN と同じ。MAIN world からは MuseHelper を使えない)
+  const OWN = '[id^="muse-"], [class^="muse-"], [class*=" muse-"]';
   const RE_USAGE = /usage|quota|limit|token|credit|plan|reset|remain|percent|budget|consum|allowance|weekly/i;
 
   // ID らしきもの(10桁以上の数字・UUID)を伏せる
@@ -80,25 +81,9 @@
     return k ? el[k] : null;
   }
 
-  function isQueryClient(v) {
-    if (!v || typeof v !== 'object') return false;
-    try {
-      if (typeof v.getQueryCache !== 'function' || typeof v.fetchQuery !== 'function') return false;
-      if (typeof v['__museHelperNoSuchProp_' + Math.random().toString(36).slice(2)] !== 'undefined') return false;
-      const c = v.getQueryCache();
-      return !!c && typeof c.getAll === 'function' && Array.isArray(c.getAll());
-    } catch (e) {
-      return false;
-    }
-  }
-
+  // Muse の QueryClient(探し方は usage-main.js に任せる)
   function queryClient() {
-    const host = [...document.querySelectorAll('body > div *')].find((e) => fiberOf(e));
-    for (let f = fiberOf(host); f; f = f.return) {
-      const p = f.memoizedProps;
-      for (const v of [p && p.client, p && p.value]) if (isQueryClient(v)) return v;
-    }
-    return null;
+    try { return typeof window.__museQueryClient === 'function' ? window.__museQueryClient() : null; } catch (e) { return null; }
   }
 
   // React Query のクエリ一覧。filter(文字列)を渡すとキーに含むものだけ、withData で中身の形も出す

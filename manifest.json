@@ -11,13 +11,16 @@
     "128": "icons/icon128.png"
   },
   "host_permissions": ["https://api.github.com/*"],
+  "web_accessible_resources": [
+    { "resources": ["icons/icon16.png"], "matches": ["https://muse.ai/*"] }
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
       "matches": ["https://muse.ai/*"],
-      "js": ["common.js", "tooltip.js", "content.js", "settings.js", "counter.js", "drafts.js", "draftlist.js", "sendkey.js", "bookmarks.js", "snippets.js", "search.js", "activity.js", "guard.js", "layout.js", "keys.js", "reactions.js"],
+      "js": ["common.js", "tooltip.js", "content.js", "settings-charts.js", "settings.js", "counter.js", "drafts.js", "draftlist.js", "sendkey.js", "bookmarks.js", "snippets.js", "search.js", "activity.js", "guard.js", "layout.js", "keys.js", "reactions.js"],
       "run_at": "document_idle"
     },
     {

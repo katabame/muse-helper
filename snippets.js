@@ -14,7 +14,7 @@
   const style = document.createElement('style');
   style.textContent = `
     #${PICK} { position: fixed; z-index: 2147483000; box-sizing: border-box; width: min(420px, calc(100vw - 32px));
-      max-height: min(50vh, 420px); display: flex; flex-direction: column; font: 13px/1.45 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;
+      max-height: min(50vh, 420px); display: flex; flex-direction: column; font: 13px/1.45 ${M.FONT};
       color: #1a1a19; background: #fff; border: 1px solid rgba(0,0,0,.1); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
     html.dark #${PICK} { color: #f0efec; background: #262624; border-color: rgba(255,255,255,.1); }
     #${PICK} input { all: unset; box-sizing: border-box; width: 100%; padding: 10px 12px; border-bottom: 1px solid rgba(128,128,128,.2); }
@@ -178,7 +178,7 @@
     const n = document.createElement('div');
     n.textContent = text;
     n.style.cssText = `position:fixed;left:${Math.max(16, r.left)}px;bottom:${innerHeight - r.top + 8}px;z-index:2147483000;padding:6px 10px;` +
-      'border-radius:8px;font:12px/1.4 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;color:#fff;background:rgba(30,30,30,.92);pointer-events:none;';
+      'border-radius:8px;font:12px/1.4 ' + M.FONT + ';color:#fff;background:rgba(30,30,30,.92);pointer-events:none;';
     document.body.appendChild(n);
     setTimeout(() => n.remove(), 4000);
   }

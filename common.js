@@ -117,10 +117,46 @@ globalThis.MuseHelper = (() => {
     return `約${Math.round(Math.min(p.atReset, 999))}%`;
   }
 
-  // 拡張機能を再読み込み・更新すると、開いていたタブの content script は切り離され、
-  // chrome.runtime の呼び出しが "Extension context invalidated" で失敗する。
-  // バージョンは読み込み時に一度だけ取得しておく。
-  // ---------- チャットの入力欄(counter.js / drafts.js で共有) ----------
+  // ---------- 表示の共通部品 ----------
+  // 日本語の字形を優先するフォント(MAIN world の timestamps.js は同じ指定を自前で持つ)
+  const FONT = 'system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif';
+  // Muse Helper が足した要素(id・クラスが muse- で始まるもの)
+  const OWN = '[id^="muse-"], [class^="muse-"], [class*=" muse-"]';
+  // ノード(テキストノードも可)が Muse Helper の要素の中にあるか
+  function isOwn(n) {
+    const e = n && (n.nodeType === 1 ? n : n.parentElement);
+    return !!(e && e.closest && e.closest(OWN));
+  }
+  // 要素を作る(クラスと文字は省略可)
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  // 線で描くアイコン(viewBox 24×24、色は currentColor)。size を null にすると大きさは CSS に任せる
+  function icon(d, { size = 14, strokeWidth = 2 } = {}) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    if (size != null) {
+      svg.setAttribute('width', String(size));
+      svg.setAttribute('height', String(size));
+    }
+    svg.setAttribute('aria-hidden', 'true');
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', d);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', 'currentColor');
+    p.setAttribute('stroke-width', String(strokeWidth));
+    p.setAttribute('stroke-linecap', 'round');
+    p.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(p);
+    return svg;
+  }
+  const ICON_CROSS = 'M6 6l12 12M18 6L6 18';
+
+  // ---------- チャットの入力欄(counter.js / drafts.js / sendkey.js / guard.js で共有) ----------
   // aria-label が「メッセージ」の textarea(なければダイアログ外の表示中の textarea)
   function composerInput() {
     const list = [...document.querySelectorAll('textarea')].filter(
@@ -138,6 +174,22 @@ globalThis.MuseHelper = (() => {
     return { card, anchor: anchor && anchor !== document.body ? anchor : null };
   }
 
+  // 入力欄のカードの中の、押せる送信ボタン(aria-label に「送信」「Send」を含むもの)
+  function sendButton(t) {
+    return [...composerLayout(t).card.querySelectorAll('button')].find(
+      (b) => /送信|send/i.test(b.getAttribute('aria-label') || '') && !b.disabled && b.getAttribute('aria-disabled') !== 'true',
+    ) || null;
+  }
+  // 送信する: 送信ボタンを押す。見つからなければ、修飾キーなしの Enter を入力欄に送って Muse 側の送信処理に任せる
+  // (Muse Helper 自身のキー処理(sendkey.js / guard.js)が見分けられるよう __museHelperSynthetic を付ける)
+  function send(t) {
+    const btn = sendButton(t);
+    if (btn) return btn.click();
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true });
+    ev.__museHelperSynthetic = true;
+    t.dispatchEvent(ev);
+  }
+
   // 文字数(絵文字や結合文字も1文字として数える)
   const seg = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter('ja', { granularity: 'grapheme' }) : null;
   function charCount(s) {
@@ -151,7 +203,6 @@ globalThis.MuseHelper = (() => {
   // ---------- チャットのメッセージ(会話の統計・ショートカット・ブックマークで共有) ----------
   // 時刻は timestamps.js(MAIN world)がメッセージに付けたラベルの data-iso から読む
   const OWN_IN_MESSAGE = '.muse-ts-label, .muse-date-sep, .muse-bm-btn';
-  const RELOAD_SIGNAL = 'museHelperReloadAt'; // 「再読み込みして更新」の合図(muse.ai の localStorage)
   const PENDING_DRAFT = 'museHelperPendingDraft'; // 拡張機能の更新で読み込み直す前の入力欄の文章(このタブの sessionStorage)
   function isUserMessage(el) {
     const role = (el.getAttribute('data-message-role') || '').toLowerCase();
@@ -181,6 +232,24 @@ globalThis.MuseHelper = (() => {
       out += n.textContent;
     }
     return out.replace(/\s+/g, ' ').trim();
+  }
+  // ID からメッセージの要素を探す
+  function findMessage(id) {
+    if (!id) return null;
+    try { return document.querySelector(`[data-message-id="${CSS.escape(id)}"]`); } catch (e) { return null; }
+  }
+  // 要素を含む、縦にスクロールしている祖先(なければ null)
+  function scrollerOf(e) {
+    for (let p = e && e.parentElement; p && p !== document.body; p = p.parentElement) {
+      const oy = getComputedStyle(p).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+    }
+    return null;
+  }
+  // 会話の名前(タブのタイトル。サービス名だけなら空)
+  function chatTitle() {
+    const t = document.title.replace(/\s*[|\-–—]\s*Muse\s*$/i, '').trim();
+    return /^muse$/i.test(t) ? '' : t.slice(0, 80);
   }
   // メッセージまでスクロールして、少しの間枠で示す
   function scrollToMessage(el, block = 'start') {
@@ -249,14 +318,43 @@ globalThis.MuseHelper = (() => {
     }
   }
 
+  // 入力欄の見張りなど、0.4秒ごとの処理をまとめて1つのタイマーで動かす
+  const tickers = [];
+  function everyTick(fn) {
+    tickers.push(fn);
+    if (tickers.length === 1) {
+      setInterval(() => {
+        for (const f of tickers) { try { f(); } catch (e) {} }
+      }, 400);
+    }
+  }
+
   // 日付のキー「2026-11-24」(端末の時刻で)
   const dayKey = (t) => {
     const d = new Date(t);
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   };
 
+  // 拡張機能を再読み込み・更新すると、開いていたタブの content script は切り離され、
+  // chrome.runtime の呼び出しが "Extension context invalidated" で失敗する。
+  // そのため、バージョンと「拡張機能が動いているか」を確かめるための URL は、読み込み時に一度だけ取得しておく。
   let VERSION = '';
   try { VERSION = chrome.runtime.getManifest().version; } catch (e) {}
+  // ページから読める拡張機能のファイル(manifest の web_accessible_resources)。
+  // 拡張機能が有効な間だけ読み込める(無効化・削除すると読めない)
+  let PROBE_URL = '';
+  try { PROBE_URL = chrome.runtime.getURL('icons/icon16.png'); } catch (e) {}
+  // 拡張機能が(切り離されたこのスクリプトとは別に)今動いているか。PROBE_URL を読めるかで確かめる
+  function extensionRunning() {
+    return new Promise((resolve) => {
+      if (!PROBE_URL || typeof Image === 'undefined') return resolve(false);
+      const img = new Image();
+      const done = (ok) => { img.onload = img.onerror = null; resolve(ok); };
+      img.onload = () => done(true);
+      img.onerror = () => done(false);
+      img.src = `${PROBE_URL}?t=${Date.now()}`;
+    });
+  }
 
   return {
     REPO,
@@ -302,7 +400,6 @@ globalThis.MuseHelper = (() => {
       try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; }
     },
 
-    // tag が current より新しいか
     // フォルダのファイルが今動いている版より新しいか(再読み込みすれば反映できる)
     diskNewer(u) {
       return !!(u && u.unpacked && u.disk && this.isNewer(u.disk, this.version()));
@@ -323,9 +420,6 @@ globalThis.MuseHelper = (() => {
       });
     },
 
-    // 再読み込みして更新し、このタブも読み込み直す。
-    // ほかの muse.ai のタブには localStorage で合図する(storage イベントはほかのタブにだけ届く。
-    // 再読み込みで chrome.* が使えなくなった古いスクリプトでも受け取れる。タブの URL を見る権限も要らない)
     // 読み込み直す前に、入力欄の文章をこのタブの sessionStorage に預ける(読み込み直したあと drafts.js が戻す)。
     // 預けられなかったら false
     stashComposer() {
@@ -339,12 +433,15 @@ globalThis.MuseHelper = (() => {
         return false;
       }
     },
+    // 再読み込みして更新する。
+    // 拡張機能が再読み込みされると、このタブも含めて開いている muse.ai のタブは content.js の orphanCheck が
+    // 入力中の文章を預けて読み込み直す(新しい版が動き始めてから)
     reloadToUpdate() {
-      try { localStorage.setItem(RELOAD_SIGNAL, String(Date.now())); } catch (e) {}
-      this.stashComposer();
       try { chrome.runtime.sendMessage({ type: 'museReloadSelf' }); } catch (e) {}
-      setTimeout(() => location.reload(), 1500);
     },
+    extensionRunning,
+
+    // tag が current より新しいか
 
     isNewer(tag, current) {
       const a = parse(tag), b = parse(current);
@@ -358,7 +455,8 @@ globalThis.MuseHelper = (() => {
     HOUR, DAY, WEEK,
     resetDate, forecast, severity, when, projText,
     composerInput, composerLayout, charCount,
-    RELOAD_SIGNAL, PENDING_DRAFT, messages, messageText, scrollToMessage, duration, ALT, SHORTCUTS, keyLabel, shortcutCodes, insertText, dayKey, OWN_IN_MESSAGE,
+    PENDING_DRAFT, messages, messageText, scrollToMessage, duration, ALT, SHORTCUTS, keyLabel, shortcutCodes, insertText, dayKey, OWN_IN_MESSAGE,
+    FONT, OWN, isOwn, el, icon, ICON_CROSS, sendButton, send, findMessage, scrollerOf, chatTitle, everyTick,
     SEVERITY_COLOR: ['#16a34a', '#d97706', '#dc2626'], // 設定画面(明暗どちらでも読める濃さ)
     fmt12: () => document.documentElement.getAttribute('data-muse-ts-format') === '12',
     signed(n, digits = 0) {

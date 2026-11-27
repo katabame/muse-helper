@@ -6,7 +6,7 @@
   'use strict';
   const M = MuseHelper;
   const PANEL = 'muse-helper-draftlist';
-  const FONT = 'system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif';
+  const FONT = M.FONT;
 
   let names = {}; // { [会話のパス]: サイドバーでの名前 }(bookmarks.js が覚えたもの)
   let titles = {}; // { [会話のパス]: ブックマークを保存したときのタブの名前 }
@@ -47,26 +47,8 @@
   `;
   document.documentElement.appendChild(style);
 
-  const el = (tag, cls, text) => {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text != null) e.textContent = text;
-    return e;
-  };
-  function cross() {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '14');
-    svg.setAttribute('height', '14');
-    svg.setAttribute('aria-hidden', 'true');
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p.setAttribute('d', 'M6 6l12 12M18 6L6 18');
-    p.setAttribute('stroke', 'currentColor');
-    p.setAttribute('stroke-width', '2');
-    p.setAttribute('stroke-linecap', 'round');
-    svg.appendChild(p);
-    return svg;
-  }
+  const el = M.el;
+  const cross = () => M.icon(M.ICON_CROSS);
 
   function chatName(path) {
     if (path === location.pathname) return 'この会話';

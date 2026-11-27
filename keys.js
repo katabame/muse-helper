@@ -9,13 +9,7 @@
   let codes = M.shortcutCodes(null); // { id: code }
 
   // メッセージの列をスクロールしている要素
-  function scroller(from) {
-    for (let e = from && from.parentElement; e && e !== document.body; e = e.parentElement) {
-      const o = getComputedStyle(e).overflowY;
-      if ((o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight) return e;
-    }
-    return document.scrollingElement;
-  }
+  const scroller = (from) => M.scrollerOf(from) || document.scrollingElement;
 
   function focusComposer() {
     const t = M.composerInput();
@@ -53,16 +47,16 @@
   }
 
   // ---------- 一覧の表示 ----------
+  let closeHelp = null; // 表示中の一覧を閉じる(閉じる操作の見張りもやめる)
   function help() {
-    const old = document.getElementById(HELP);
-    if (old) return old.remove();
+    if (closeHelp) return closeHelp();
     const box = document.createElement('div');
     box.id = HELP;
     box.setAttribute('role', 'dialog');
     box.setAttribute('aria-label', 'キーボードショートカット');
     const dark = document.documentElement.classList.contains('dark');
     box.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483001;box-sizing:border-box;' +
-      'width:min(380px,calc(100vw - 32px));padding:14px 16px;border-radius:14px;font:13px/1.5 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif;pointer-events:auto;' +
+      'width:min(380px,calc(100vw - 32px));padding:14px 16px;border-radius:14px;font:13px/1.5 ' + M.FONT + ';pointer-events:auto;' +
       `box-shadow:0 8px 32px rgba(0,0,0,.25);background:${dark ? '#262624' : '#fff'};color:${dark ? '#f0efec' : '#1a1a19'};` +
       `border:1px solid ${dark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.1)'};`;
     const h = document.createElement('div');
@@ -85,16 +79,27 @@
     foot.style.cssText = 'margin-top:8px;font-size:11px;opacity:.6;';
     box.appendChild(foot);
     document.body.appendChild(box);
-    const close = (e) => {
-      if (e.type === 'keydown' && e.altKey && e.code === codes.help) return; // もう一度押したときは下の処理で閉じる
+    let watching = false;
+    const remove = () => {
       box.remove();
-      window.removeEventListener('keydown', close, true);
-      window.removeEventListener('pointerdown', close, true);
+      if (watching) {
+        window.removeEventListener('keydown', onEvent, true);
+        window.removeEventListener('pointerdown', onEvent, true);
+      }
+      watching = false;
+      closeHelp = null;
+    };
+    const onEvent = (e) => {
+      if (e.type === 'keydown' && e.altKey && e.code === codes.help) return; // もう一度押したときは下のショートカットの処理で閉じる
+      remove();
       if (e.type === 'keydown' && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); }
     };
+    closeHelp = remove;
     setTimeout(() => {
-      window.addEventListener('keydown', close, true);
-      window.addEventListener('pointerdown', close, true);
+      if (closeHelp !== remove) return; // 見張りを始める前に閉じられた
+      watching = true;
+      window.addEventListener('keydown', onEvent, true);
+      window.addEventListener('pointerdown', onEvent, true);
     });
   }
 

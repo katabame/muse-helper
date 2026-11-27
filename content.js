@@ -20,7 +20,9 @@
 
   // ---------- 読み取り ----------
   function scan() {
-    const bars = [...document.querySelectorAll('[role="progressbar"][aria-valuenow]')];
+    // 使用率のバーは設定ダイアログの「利用状況」にある。ダイアログの外のバー(ファイルの送信の進み具合など)や、
+    // 会話の本文の「◯月◯日リセット」などを読まないよう、ダイアログの中だけを見る
+    const bars = [...document.querySelectorAll('[role="dialog"] [role="progressbar"][aria-valuenow]')];
     if (!bars.length) return false;
 
     // 「◯◯プラン」のバーを優先、なければ最初のバー
@@ -28,8 +30,7 @@
     const used = Number(bar.getAttribute('aria-valuenow'));
     if (!Number.isFinite(used)) return false;
 
-    const scope = bar.closest('[role="dialog"]') || document.body;
-    const text = scope.textContent || '';
+    const text = bar.closest('[role="dialog"]').textContent || '';
     const reset = (text.match(/(\d{1,2}月\d{1,2}日)に?リセット/) || [])[1] || '';
     const extra = (text.match(/残り([\d.,]+[億万千]?)トークン/) || [])[1] || '';
 
@@ -119,7 +120,7 @@
     el.id = 'muse-usage-badge';
     el.style.cssText = [
       'position:fixed', 'top:10px', 'right:110px', 'z-index:2147483647',
-      'font:12px/1.3 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif',
+      `font:12px/1.3 ${MuseHelper.FONT}`,
       'color:#fff', 'background:rgba(30,30,34,.92)', 'border:1px solid rgba(255,255,255,.18)',
       'border-radius:10px', 'padding:6px 10px', 'cursor:grab', 'user-select:none',
       'box-shadow:0 2px 10px rgba(0,0,0,.35)', 'min-width:120px',
@@ -284,10 +285,10 @@
     if (!el) build();
     small.style.display = ''; // 縮小表示で隠した行を戻す(他の行は下で表示/非表示を決め直す)
     if (!MuseHelper.alive()) {
-      // 拡張機能が再読み込み・更新された後の古いスクリプト。ふだんはすぐ読み込み直すので(下の orphanCheck)、
-      // ここが見えるのは読み込み直せなかったとき
+      // 拡張機能が再読み込み・更新・無効化された後の古いスクリプト。更新なら新しい版が動き始めたところで
+      // 読み込み直すので(下の orphanCheck)、ここが見えるのは無効化されたときか、読み込み直せなかったとき
       upd.style.display = 'none';
-      warn.textContent = '⚠ 拡張機能が更新されました — ページを再読み込みしてください';
+      warn.textContent = '⚠ Muse Helper が停止しています — ページを再読み込みしてください';
       warn.style.display = 'block';
       el.style.borderColor = '#fbbf24';
       return;
@@ -431,15 +432,24 @@
   // ページを開いたら、インストールしたフォルダが新しくなっていないか確認する(1分ごとの確認を待たずにボタンを出すため)
   try { chrome.runtime.sendMessage({ type: 'museCheckDisk' }, () => void chrome.runtime.lastError); } catch (e) {}
 
-  // 拡張機能が更新・再読み込みされたら(chrome://extensions の ↻ など)、このタブも読み込み直す。
+  // 拡張機能が更新・再読み込みされたら(「再読み込みして更新」・chrome://extensions の ↻ など)、このタブも読み込み直す。
   // 古いスクリプトは chrome.* が使えず下書きも保存できないので、入力欄の文章はこのタブの sessionStorage に預け、
-  // 読み込み直したあと drafts.js が下書きに保存して入力欄に戻す
-  const orphanCheck = setInterval(() => {
-    if (MuseHelper.alive()) return;
-    clearInterval(orphanCheck);
-    // 預けられなかったら、文章が消えないよう読み込み直さない(バッジに警告を出したまま)
-    if (MuseHelper.stashComposer()) location.reload();
-  }, 2000);
+  // 読み込み直したあと drafts.js が下書きに保存して入力欄に戻す。
+  // 無効化・削除されたときも古いスクリプトからは同じに見えるので、拡張機能のファイルを読めるか(= 新しい版が
+  // 動いているか)を確かめてから読み込み直す。読めない間は読み込み直さない(入力中の文章も消さない)
+  let orphanBusy = false;
+  const orphanCheck = setInterval(async () => {
+    if (MuseHelper.alive() || orphanBusy) return;
+    orphanBusy = true;
+    try {
+      if (!(await MuseHelper.extensionRunning())) return; // 無効化されている・まだ起動中。次の確認で
+      clearInterval(orphanCheck);
+      // 預けられなかったら、文章が消えないよう読み込み直さない(バッジに警告を出したまま)
+      if (MuseHelper.stashComposer()) location.reload();
+    } finally {
+      orphanBusy = false;
+    }
+  }, 1000);
 
   // アシスタントの名前を覚える(画面上部のアバターの aria-label。なければタブの名前「Chat — ロチェ」)
   function learnAssistant() {
@@ -472,23 +482,11 @@
     });
   } catch (e) {}
 
-  // ほかのタブで「再読み込みして更新」が押されたら、拡張機能の再読み込みを待ってからこのタブも読み込み直す
-  window.addEventListener('storage', (e) => {
-    if (e.key !== MuseHelper.RELOAD_SIGNAL || !e.newValue) return;
-    if (Date.now() - Number(e.newValue) > 60 * 1000) return;
-    setTimeout(() => { MuseHelper.stashComposer(); location.reload(); }, 2000);
-  });
-
   // ---------- 起動 ----------
   let timer;
   // Muse Helper が自分で足した部品の中の変化には反応しない
-  const OWN = '#muse-usage-badge, .muse-helper-pane, .muse-helper-nav, .muse-ts-label, .muse-date-sep, #muse-helper-counter, #muse-helper-draft-chip, .muse-bm-btn, #muse-helper-bookmarks, #muse-helper-keys-help, #muse-helper-search, #muse-helper-snippets, #muse-helper-guard, .muse-collapse-btn, .muse-bm-count';
-  const isOwn = (n) => {
-    const e = n && (n.nodeType === 1 ? n : n.parentElement);
-    return !!(e && e.closest(OWN));
-  };
   const obs = new MutationObserver((list) => {
-    if (list.every((m) => isOwn(m.target))) return;
+    if (list.every((m) => MuseHelper.isOwn(m.target))) return;
     clearTimeout(timer);
     timer = setTimeout(scan, 300);
   });

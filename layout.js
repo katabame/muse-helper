@@ -39,19 +39,8 @@
     style.textContent = rules.join('\n');
   }
 
-  function chevron(up) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('aria-hidden', 'true');
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p.setAttribute('d', up ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6');
-    p.setAttribute('fill', 'none');
-    p.setAttribute('stroke', 'currentColor');
-    p.setAttribute('stroke-width', '2');
-    p.setAttribute('stroke-linecap', 'round');
-    svg.appendChild(p);
-    return svg;
-  }
+  // 大きさは CSS(.muse-collapse-btn svg)で決める
+  const chevron = (up) => M.icon(up ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6', { size: null });
 
   // 本文の高さ(時刻ラベルを除く子要素のうち一番高いもの)
   function contentHeight(el) {

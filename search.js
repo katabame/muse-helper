@@ -18,7 +18,7 @@
     ::highlight(${HL_CUR}) { background-color: #eda100; color: #000; }
     #${BAR} { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2147483000; box-sizing: border-box;
       width: min(520px, calc(100vw - 32px)); display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px;
-      font: 13px/1.4 system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic UI",Meiryo,sans-serif; color: #1a1a19; background: #fff; border: 1px solid rgba(0,0,0,.1);
+      font: 13px/1.4 ${M.FONT}; color: #1a1a19; background: #fff; border: 1px solid rgba(0,0,0,.1);
       border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
     html.dark #${BAR} { color: #f0efec; background: #262624; border-color: rgba(255,255,255,.1); }
     #${BAR} input { all: unset; flex: 1; min-width: 0; padding: 4px 0; }
@@ -33,22 +33,7 @@
 
   const bar = () => document.getElementById(BAR);
 
-  function icon(d) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '16');
-    svg.setAttribute('height', '16');
-    svg.setAttribute('aria-hidden', 'true');
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p.setAttribute('d', d);
-    p.setAttribute('fill', 'none');
-    p.setAttribute('stroke', 'currentColor');
-    p.setAttribute('stroke-width', '2');
-    p.setAttribute('stroke-linecap', 'round');
-    p.setAttribute('stroke-linejoin', 'round');
-    svg.appendChild(p);
-    return svg;
-  }
+  const icon = (d) => M.icon(d, { size: 16 });
   function button(label, d, onClick) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -84,7 +69,7 @@
       b.append(input, sel, count,
         button('前へ(Shift+Enter)', 'M6 15l6-6 6 6', () => move(-1)),
         button('次へ(Enter)', 'M6 9l6 6 6-6', () => move(1)),
-        button('閉じる(Esc)', 'M6 6l12 12M18 6L6 18', close));
+        button('閉じる(Esc)', M.ICON_CROSS, close));
       input.addEventListener('input', () => run(true));
       sel.addEventListener('change', () => { scope = sel.value; run(true); input.focus(); });
       b.addEventListener('keydown', (e) => {
