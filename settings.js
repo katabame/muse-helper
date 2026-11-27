@@ -1178,7 +1178,7 @@
     btn.setAttribute('role', 'button');
     btn.setAttribute('tabindex', '0');
     btn.style.cursor = 'pointer';
-    btn.appendChild(texts('今すぐ確認', '新しい版は1時間ごと、インストールしたフォルダは1分ごとに自動で確認しています'));
+    btn.appendChild(texts('今すぐ確認', '新しい版は1時間ごと、インストールしたフォルダは muse.ai を表示している間1.5秒ごとに自動で確認しています'));
     const run = () => {
       if (checking) return;
       checking = true;
@@ -1257,7 +1257,7 @@
     linkDivider.style.display = has && !disk ? '' : 'none';
     const linkSub = link.querySelector('.text-caption-1');
     if (linkSub) linkSub.textContent = u && u.unpacked
-      ? 'インストールしたフォルダを新しくすると(git pull や zip の上書き)、1分以内にここに「再読み込みして更新」が出ます'
+      ? 'インストールしたフォルダを新しくすると(git pull や zip の上書き)、数秒でここに「再読み込みして更新」が出ます'
       : 'ダウンロードして読み込み直すと更新できます';
     btnTitle.textContent = checking ? '確認中…' : '今すぐ確認';
   }

@@ -2,7 +2,7 @@
 importScripts('common.js');
 const { UPDATE_KEY, API_LATEST } = MuseHelper;
 const ALARM = 'museUpdateCheck';
-const DISK_ALARM = 'museDiskCheck'; // フォルダの確認(1分ごと。GitHub には通信しない)
+const DISK_ALARM = 'museDiskCheck'; // フォルダの確認(1分ごと。muse.ai のタブを表示していない間の予備。GitHub には通信しない)
 
 async function check() {
   const prev = (await chrome.storage.local.get(UPDATE_KEY))[UPDATE_KEY] || {};
@@ -95,7 +95,7 @@ async function devCheck() {
   try { return await devChecking; } finally { devChecking = null; }
 }
 
-// フォルダだけを確認する(1分ごと・muse.ai のページを開いたとき)。変わったときだけ保存する
+// フォルダだけを確認する(muse.ai のタブを表示している間は1.5秒ごと・ページを開いたとき・1分ごと)。変わったときだけ保存する
 // (毎回保存すると、すべてのタブでバッジの描き直しが起きるため)
 async function checkDisk() {
   const [disk, unpacked] = await Promise.all([diskVersion(), isUnpacked()]);

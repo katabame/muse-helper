@@ -429,8 +429,16 @@
     });
   } catch (e) {}
 
-  // ページを開いたら、インストールしたフォルダが新しくなっていないか確認する(1分ごとの確認を待たずにボタンを出すため)
+  // インストールしたフォルダが新しくなっていないか、ページを開いたときと、表示中は1.5秒ごとに確認する
+  // (フォルダを上書きしたら、すぐに「再読み込みして更新」を出すため。background.js の checkDisk は
+  // manifest.json を読むだけで、変わったときだけ保存する)。
+  // ストアからインストールした拡張機能(フォルダが変わらない)と、裏にあるタブでは確認しない
+  const checkDisk = () => {
+    if (!MuseHelper.alive() || document.hidden || (update && update.unpacked === false)) return;
+    try { chrome.runtime.sendMessage({ type: 'museCheckDisk' }, () => void chrome.runtime.lastError); } catch (e) {}
+  };
   try { chrome.runtime.sendMessage({ type: 'museCheckDisk' }, () => void chrome.runtime.lastError); } catch (e) {}
+  setInterval(checkDisk, 1500);
 
   // 拡張機能が更新・再読み込みされたら(「再読み込みして更新」・chrome://extensions の ↻ など)、このタブも読み込み直す。
   // 古いスクリプトは chrome.* が使えず下書きも保存できないので、入力欄の文章はこのタブの sessionStorage に預け、
