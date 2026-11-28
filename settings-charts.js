@@ -27,7 +27,8 @@
     const f = M.forecast(usage, history);
     // 中身が変わっていなければ作り直さない(「表で見る」の開閉やマウスを乗せた表示を保つため)
     const last = history[history.length - 1];
-    const sig = JSON.stringify([f && f.used, f && f.resetAt, f && f.resetPassed, history.length, last && last.at, fmt12]);
+    // 取得した時刻(f.at)も入れる(上限の見込みの「あと◯時間」を古いままにしないため)
+    const sig = JSON.stringify([f && f.used, f && f.at, f && f.resetAt, f && f.resetPassed, history.length, last && last.at, fmt12]);
     if (box.dataset.sig === sig && box.firstChild) return;
     box.dataset.sig = sig;
     const wasOpen = !!box.querySelector('details[open]');
@@ -49,7 +50,7 @@
       mark.style.cssText = 'color:var(--muse-helper-critical);';
       const text = el('span', '');
       text.append(`${which}が続くと `, el('b', '', `${M.when(limit.hitAt, fmt12)}ごろ`),
-        ` に上限に達する見込みです(${M.until(limit.hitAt - Date.now())}・リセットの${M.duration(Math.max(M.HOUR, Math.round((f.resetAt - limit.hitAt) / M.HOUR) * M.HOUR))}前)`);
+        ` に上限に達する見込みです(${limit.hitAt > Date.now() ? M.until(limit.hitAt - Date.now()) : 'すでに達している可能性があります'}・リセットの${M.duration(Math.max(M.HOUR, Math.round((f.resetAt - limit.hitAt) / M.HOUR) * M.HOUR))}前)`);
       head.append(mark, text);
       box.appendChild(head);
     }

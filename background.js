@@ -77,9 +77,11 @@ async function devHash() {
   }
   return h.toString(16);
 }
-async function devCheck() {
+// intervalMs: タブの確認の間隔(上級者モード)。複数のタブから頼まれても、この間隔に1回だけ確かめる
+async function devCheck(intervalMs) {
   if (devChecking) return devChecking;
-  if (Date.now() - devLastAt < 400) return { changed: false };
+  const gap = Math.min(5000, Math.max(400, (Number(intervalMs) || 1500) - 200)); // タイマーのずれのぶん少し短く
+  if (Date.now() - devLastAt < gap) return { changed: false };
   devChecking = (async () => {
     devLastAt = Date.now();
     const base = (await chrome.storage.session.get(DEV_BASE_KEY))[DEV_BASE_KEY];
@@ -256,7 +258,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // デベロッパーモードのファイルの確認
   if (msg && msg.type === 'museDevCheck') {
-    devCheck().then(sendResponse, () => sendResponse({ changed: false }));
+    devCheck(msg.intervalMs).then(sendResponse, () => sendResponse({ changed: false }));
     return true;
   }
   // muse.ai のページを開いたときのフォルダの確認

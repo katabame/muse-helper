@@ -482,9 +482,17 @@
     if (!devOn) return;
     devTimer = setInterval(() => {
       if (!MuseHelper.alive()) return clearInterval(devTimer);
-      try { chrome.runtime.sendMessage({ type: 'museDevCheck' }, () => void chrome.runtime.lastError); } catch (e) {}
+      if (document.hidden) return; // 裏にあるタブからは頼まない(表に戻ったときにすぐ確認する)
+      devAsk();
     }, adv.devSec * 1000);
   }
+  // 間隔も伝え、background が複数のタブからの依頼を間隔ごとに1回にまとめられるようにする
+  const devAsk = () => {
+    try { chrome.runtime.sendMessage({ type: 'museDevCheck', intervalMs: adv.devSec * 1000 }, () => void chrome.runtime.lastError); } catch (e) {}
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (devOn && !document.hidden && MuseHelper.alive()) devAsk();
+  });
   // 上級者モードの間隔を反映する(フォルダの確認・デベロッパーモードの確認・使用率の自動取得)
   function applyAdvanced(v) {
     const prevDev = adv.devSec;
@@ -492,21 +500,24 @@
     clearInterval(diskTimer);
     diskTimer = adv.diskSec ? setInterval(checkDisk, adv.diskSec * 1000) : 0;
     if (adv.devSec !== prevDev) devWatch();
-    // usage-main.js(MAIN world)は chrome.storage を読めないので、属性で伝える
+    // usage-main.js(MAIN world)は chrome.storage を読めないので、属性で伝える。
+    // 保存された値を読む前(v === undefined の最初の呼び出し)は伝えない(既定値で早めに取りに行かないよう、
+    // usage-main.js は属性が付くまで自動の取得を待つ)
+    if (v === undefined) return;
     document.documentElement.setAttribute(MuseHelper.USAGE_INTERVAL_ATTR, String(adv.usageMin * 60000));
     // バッジや設定画面の「◯分ごと」を新しい間隔にするため、状態を送り直してもらう
     try { window.postMessage({ source: 'muse-helper', type: 'usage-status-request' }, location.origin); } catch (e) {}
   }
-  applyAdvanced(null);
+  applyAdvanced(undefined);
   try {
     chrome.storage.local.get([MuseHelper.DEV_MODE_KEY, MuseHelper.ADVANCED_KEY], (v) => {
       devOn = !!(v && v[MuseHelper.DEV_MODE_KEY]);
-      applyAdvanced(v && v[MuseHelper.ADVANCED_KEY]);
+      applyAdvanced((v && v[MuseHelper.ADVANCED_KEY]) || null);
       devWatch();
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
-      if (changes[MuseHelper.ADVANCED_KEY]) applyAdvanced(changes[MuseHelper.ADVANCED_KEY].newValue);
+      if (changes[MuseHelper.ADVANCED_KEY]) applyAdvanced(changes[MuseHelper.ADVANCED_KEY].newValue || null);
       if (changes[MuseHelper.DEV_MODE_KEY]) { devOn = !!changes[MuseHelper.DEV_MODE_KEY].newValue; devWatch(); }
     });
   } catch (e) {}

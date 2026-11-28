@@ -14,9 +14,13 @@
   window.__museUsageInstalled = true;
 
   const REFRESH_MS = 5 * 60 * 1000; // 自動更新の間隔(既定)
-  // 上級者モードで変えた間隔(content.js が <html> の属性で伝える。1分未満にはしない)
+  // 上級者モードで変えた間隔(content.js が保存された値を読んでから <html> の属性で伝える。1分未満にはしない)
   const INTERVAL_ATTR = 'data-muse-helper-usage-interval';
   const refreshMs = () => Math.max(60000, Number(document.documentElement.getAttribute(INTERVAL_ATTR)) || REFRESH_MS);
+  // 間隔が届くまでは自動で取りに行かない(既定の5分で早めに取りに行かないため)。
+  // content.js が動いていないときに止まったままにならないよう、10秒たったら既定の間隔で動く
+  const startedAt = Date.now();
+  const intervalKnown = () => document.documentElement.hasAttribute(INTERVAL_ATTR) || Date.now() - startedAt > 10000;
   const MSG = 'muse-helper';
 
   let qc = null; // QueryClient
@@ -244,7 +248,7 @@
     }
     // タブが裏にあっても取り直す(バッジや通知・使用率の記録を新しく保つため)。
     // ただし、ほかのタブが間隔の内に取りに行っていれば任せる
-    if (fetching || Date.now() - Math.max(lastFetchAt, lastAttemptAt, sharedAt()) < refreshMs()) return;
+    if (fetching || !intervalKnown() || Date.now() - Math.max(lastFetchAt, lastAttemptAt, sharedAt()) < refreshMs()) return;
     if (qc && opts) { markShared(); refresh(); }
     else if (recipeOk()) { markShared(); replay(); }
   }
