@@ -4,7 +4,8 @@
 // - 長いメッセージの折りたたみ: 本文の高さが一定を超えるメッセージを途中まで表示し、
 //   時刻ラベルの横のボタンで開閉する。Muse の要素には属性(data-muse-collapse)だけを付け、見た目は CSS で変える
 // - 右上の「招待」ボタンと、左下の「Museアプリをダウンロード」ボタンを隠す(既定は表示)
-// - 会話の途中に Muse が出す時刻の区切り(「19:59」「11月25日 16:38」)を、設定の時刻の表記(12時間表記なら「4:38 pm」)に合わせる
+// - 会話の途中に Muse が出す時刻の区切り(「19:59」「11月25日 16:38」)と、メッセージのメニュー(「…」・右クリック)の上部の日時
+//   (「今日20:37」)を、設定の時刻の表記(12時間表記なら「4:38 pm」)に合わせる
 // - 会話の一覧(サイドバー)の行にマウスを乗せたときの日時(「1h」「Wed」「Nov 17」)を日本語(「1時間」「水曜日」「11月17日」)にする
 (() => {
   'use strict';
@@ -71,10 +72,12 @@
   // 12時間表記のときは末尾の「16:38」を「4:38 pm」に書き換える。元の文字は data-muse-time24 に残し、24時間表記に戻すときに使う。
   // Muse が中身を変えたら(元の文字とも書き換えた文字とも違えば)、それを新しい元の文字とみなす
   const TIME_RE = /(\d{1,2}):(\d{2})$/;
-  const to12 = (s) => s.replace(TIME_RE, (_, h, m) => `${h % 12 || 12}:${m} ${h < 12 ? 'am' : 'pm'}`);
+  // 「今日20:37」のように前に文字が詰まっているときは、読みやすいよう間をあける(「今日 8:37 pm」)
+  const to12 = (s) => s.replace(/([^\d\s]?)(\d{1,2}):(\d{2})$/, (_, pre, h, m) =>
+    `${pre}${pre ? ' ' : ''}${h % 12 || 12}:${m} ${h < 12 ? 'am' : 'pm'}`);
   function convertTimes() {
     const fmt12 = M.fmt12();
-    for (const span of document.querySelectorAll('div.text-center > span.text-caption-1')) {
+    for (const span of document.querySelectorAll('div.text-center > span.text-caption-1, [role="menu"] > .text-caption-2:first-child')) {
       const t = span.firstChild;
       if (span.childNodes.length !== 1 || !t || t.nodeType !== 3 || M.isOwn(span)) continue;
       const cur = t.data;
