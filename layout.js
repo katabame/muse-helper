@@ -5,6 +5,7 @@
 //   時刻ラベルの横のボタンで開閉する。Muse の要素には属性(data-muse-collapse)だけを付け、見た目は CSS で変える
 // - 右上の「招待」ボタンと、左下の「Museアプリをダウンロード」ボタンを隠す(既定は表示)
 // - 会話の途中に Muse が出す時刻の区切り(「19:59」「11月25日 16:38」)を、設定の時刻の表記(12時間表記なら「4:38 pm」)に合わせる
+// - 会話の一覧(サイドバー)の行にマウスを乗せたときの日時(「1h」「Wed」「Nov 17」)を日本語(「1時間」「水曜日」「11月17日」)にする
 (() => {
   'use strict';
   const M = MuseHelper;
@@ -86,6 +87,41 @@
       if (cur !== want) t.data = want;
     }
   }
+  // ---------- 会話の一覧の日時を日本語に ----------
+  // Muse は「20m」「1h」「Wed」「Nov 17」「Nov 17, 2025」のように英語で出すので書き換える(読めない形ならそのまま)。
+  // 元の文字は data-muse-orig に残し、Muse が中身を変えたら(元とも書き換え後とも違えば)新しい元の文字とみなす
+  const WEEKDAYS = { Sun: '日曜日', Mon: '月曜日', Tue: '火曜日', Wed: '水曜日', Thu: '木曜日', Fri: '金曜日', Sat: '土曜日' };
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function toJa(t) {
+    const s = t.trim();
+    let m;
+    if (/^(just )?now$/i.test(s)) return 'たった今';
+    if ((m = s.match(/^(\d+)\s*(s|m|h|d|w|mo|y)$/))) {
+      return m[1] + { s: '秒', m: '分', h: '時間', d: '日', w: '週間', mo: 'か月', y: '年' }[m[2]];
+    }
+    if (WEEKDAYS[s.slice(0, 3)] && /^[A-Z][a-z]{2,8}$/.test(s)) return WEEKDAYS[s.slice(0, 3)];
+    if ((m = s.match(/^([A-Z][a-z]{2})[a-z]*\.? (\d{1,2})(?:, (\d{4}))?$/)) && MONTHS.includes(m[1])) {
+      return `${m[3] ? m[3] + '年' : ''}${MONTHS.indexOf(m[1]) + 1}月${m[2]}日`;
+    }
+    return null;
+  }
+  function localizeRows() {
+    for (const span of document.querySelectorAll('[data-testid="hatch-thread-row"] > span.text-caption-1')) {
+      const t = span.firstChild;
+      if (span.childNodes.length !== 1 || !t || t.nodeType !== 3) continue;
+      const cur = t.data;
+      if (span.dataset.museOrig == null || (cur !== span.dataset.museOrig && cur !== span.dataset.museJa)) {
+        const ja = toJa(cur);
+        if (!ja) continue;
+        span.dataset.museOrig = cur;
+        span.dataset.museJa = ja;
+      }
+      if (cur !== span.dataset.museJa) t.data = span.dataset.museJa;
+    }
+  }
+  // 「20m」→「21m」のような更新は文字だけが変わり、下の MutationObserver(要素の追加・削除)では気づけないので、400ms ごとにも確かめる
+  M.everyTick(() => { if (M.alive()) localizeRows(); });
+
   // 設定で表記を変えたとき(content.js が <html> の data-muse-ts-format を変える)
   new MutationObserver(convertTimes).observe(document.documentElement, { attributes: true, attributeFilter: ['data-muse-ts-format'] });
 
@@ -158,7 +194,7 @@
   let timeTimer = 0;
   new MutationObserver((list) => {
     // 時刻の区切りは、変化が続いていても0.1秒以内に書き換える(待ち続けて24時間表記のまま残らないよう、延ばさない)
-    if (!timeTimer) timeTimer = setTimeout(() => { timeTimer = 0; if (M.alive()) convertTimes(); }, 100);
+    if (!timeTimer) timeTimer = setTimeout(() => { timeTimer = 0; if (M.alive()) { convertTimes(); localizeRows(); } }, 100);
     if (!collapse) return;
     if (list.every((m) => m.target.closest && m.target.closest('.' + BTN))) return;
     clearTimeout(timer);
