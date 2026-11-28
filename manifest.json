@@ -20,7 +20,7 @@
   "content_scripts": [
     {
       "matches": ["https://muse.ai/*"],
-      "js": ["common.js", "tooltip.js", "content.js", "settings-charts.js", "settings.js", "counter.js", "drafts.js", "draftlist.js", "sendkey.js", "bookmarks.js", "snippets.js", "search.js", "activity.js", "guard.js", "layout.js", "keys.js", "reactions.js"],
+      "js": ["common.js", "tooltip.js", "content.js", "settings-charts.js", "settings.js", "counter.js", "drafts.js", "draftlist.js", "sendkey.js", "bookmarks.js", "snippets.js", "search.js", "activity.js", "guard.js", "layout.js", "sidebar-pin.js", "keys.js", "reactions.js"],
       "run_at": "document_idle"
     },
     {

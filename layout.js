@@ -3,6 +3,7 @@
 // - 文字の大きさ: メッセージ要素を zoom で拡大・縮小する
 // - 長いメッセージの折りたたみ: 本文の高さが一定を超えるメッセージを途中まで表示し、
 //   時刻ラベルの横のボタンで開閉する。Muse の要素には属性(data-muse-collapse)だけを付け、見た目は CSS で変える
+// - 右上の「招待」ボタンを隠す(既定は表示)
 (() => {
   'use strict';
   const M = MuseHelper;
@@ -14,6 +15,7 @@
   let width = 'default';
   let scale = 100;
   let collapse = false;
+  let hideInvite = false;
   const expanded = new Set(); // 開いたメッセージの ID
 
   const style = document.createElement('style');
@@ -36,6 +38,7 @@
     const rules = [];
     if (WIDTH[width]) rules.push(`[data-hatch-chat-column="true"] { max-width: ${WIDTH[width]} !important; }`);
     if (scale !== 100) rules.push(`[data-message-id] { zoom: ${scale / 100}; }`);
+    if (hideInvite) rules.push('[data-testid="hatch-invite-friends-button"] { display: none !important; }');
     style.textContent = rules.join('\n');
   }
 
@@ -128,11 +131,12 @@
   }).observe(document.documentElement, { childList: true, subtree: true });
 
   try {
-    const K = [M.CHAT_WIDTH_KEY, M.FONT_SCALE_KEY, M.COLLAPSE_KEY];
+    const K = [M.CHAT_WIDTH_KEY, M.FONT_SCALE_KEY, M.COLLAPSE_KEY, M.HIDE_INVITE_KEY];
     const apply = (k, v) => {
       if (k === M.CHAT_WIDTH_KEY) width = WIDTH[v] !== undefined ? v : 'default';
       if (k === M.FONT_SCALE_KEY) scale = [80, 90, 100, 110, 125].includes(v) ? v : 100;
       if (k === M.COLLAPSE_KEY) collapse = v === true;
+      if (k === M.HIDE_INVITE_KEY) hideInvite = v === true;
     };
     chrome.storage.local.get(K, (v) => {
       K.forEach((k) => apply(k, v && v[k]));

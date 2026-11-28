@@ -24,6 +24,7 @@
   let drafts = {}; // 保存中の下書き { [path]: { text, at } }
   let confirmClearUntil = 0; // 「すべて削除」の確認待ちの期限
   let devMode = false; // デベロッパーモード
+  let devReload = null; // 最後に拡張機能を再読み込みした時刻 { at, by }
   let adv = {}; // 上級者モード { on, usageMin, releaseMin, diskSec, devSec }(保存された値のまま)
   let sendKey = 'enter'; // 'enter' | 'mod-enter'
   // オン/オフだけの設定(既定値)。スイッチは data-pref で対応付ける
@@ -36,6 +37,7 @@
     [MuseHelper.REPLY_NOTIFY_KEY]: true,
     [MuseHelper.REPLY_PREVIEW_KEY]: false,
     [MuseHelper.COLLAPSE_KEY]: false,
+    [MuseHelper.HIDE_INVITE_KEY]: false,
     [MuseHelper.SIDEBAR_BADGE_KEY]: true,
     [MuseHelper.BOOKMARK_AUTOLOAD_KEY]: true,
   };
@@ -232,6 +234,8 @@
     const viewExtras = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
     viewExtras.appendChild(prefSwitch(MuseHelper.COLLAPSE_KEY, '長いメッセージを折りたたむ',
       'とても長いメッセージを途中まで表示し、時刻の横の「全文を表示」で開きます。表示が崩れる場合はオフにしてください'));
+    viewExtras.appendChild(divider());
+    viewExtras.appendChild(prefSwitch(MuseHelper.HIDE_INVITE_KEY, '「招待」ボタンを隠す', '画面右上の「招待」ボタンを表示しません'));
     view.appendChild(viewExtras);
     body.appendChild(view);
 
@@ -801,7 +805,7 @@
 
   // ---------- バックアップ ----------
   // muse で始まるキーをまとめて JSON に。アップデート確認の結果と通知済みの記録は含めない
-  const BACKUP_SKIP = [MuseHelper.UPDATE_KEY, MuseHelper.NOTIFIED_KEY];
+  const BACKUP_SKIP = [MuseHelper.UPDATE_KEY, MuseHelper.NOTIFIED_KEY, MuseHelper.DEV_RELOAD_KEY];
   const backupKey = (k) => /^muse/.test(k) && !BACKUP_SKIP.includes(k);
 
   function buildBackupSection() {
@@ -1086,19 +1090,68 @@
       const r = await devCall('refreshUsage');
       return { message: r.ok ? `取得しました(${r.lastFetchAt})` : `取得できませんでした: ${r.reason || r.lastError}` };
     }],
-    ['dom-settings', '設定画面の構造をコピー', 'この設定ダイアログの要素の構造(文字は先頭20文字まで)', () => devCall('dom', 'settings')],
-    ['dom-composer', '入力欄まわりの構造をコピー', 'チャットの入力欄と送信ボタンなどの構造', () => devCall('dom', 'composer')],
-    ['dom-message', 'メッセージの構造をコピー', '最後のメッセージ1件の構造', () => devCall('dom', 'message')],
-    ['queries', 'クエリ一覧をコピー', 'Muse の React Query キャッシュのキーと状態(★は使用率関連。中身は形だけ)', () => devCall('queries')],
     ['storage', '保存データをコピー', '拡張機能が保存しているデータ(下書きの本文は文字数だけ)', async () => JSON.stringify(await storageSummary(), null, 2)],
   ];
+  // 「画面の構造をコピー」の対象(devtools-main.js の dom() の target。queries はクエリ一覧、selector は入力した CSS セレクター)
+  const DOM_TARGETS = [
+    ['settings', '設定画面'],
+    ['composer', '入力欄まわり'],
+    ['message', '最後のメッセージ'],
+    ['sidebar', '左のドック(会話の一覧)'],
+    ['header', '会話の上部(見出し・招待など)'],
+    ['queries', 'Muse のクエリ一覧'],
+    ['selector', 'CSS セレクターを指定'],
+  ];
+
+  // 結果をコピーし(message があればそれを出すだけ)、行の説明に結果を6秒出す
+  async function runDevAction(r, sub, run) {
+    const caption = r.querySelector('.text-caption-1');
+    caption.textContent = '実行中…';
+    try {
+      const result = await run();
+      if (result && typeof result === 'object' && result.message) {
+        caption.textContent = result.message;
+      } else {
+        const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+        const ok = await copyText(text);
+        caption.textContent = ok ? `コピーしました(${text.split('\n').length} 行)` : 'コピーできませんでした';
+      }
+    } catch (e) {
+      caption.textContent = `エラー: ${(e && e.message) || e}`;
+    }
+    clearTimeout(r._museTimer);
+    r._museTimer = setTimeout(() => { caption.textContent = typeof sub === 'function' ? sub() : sub; }, 6000);
+  }
+
+  // 間隔の選択(上級者向け・開発者向けで共通)
+  function intervalRow(o) {
+    const r = row();
+    r.appendChild(texts(o.title, o.sub));
+    const sel = el('select', 'muse-helper-select ms-3 text-subheadline');
+    sel.dataset.adv = o.key;
+    sel.setAttribute('aria-label', o.title);
+    for (const [v, label] of o.choices) {
+      const op = el('option', '', v === o.def ? `${label}(既定)` : label);
+      op.value = String(v);
+      sel.appendChild(op);
+    }
+    sel.addEventListener('change', () => saveAdvanced({ ...adv, [o.key]: Number(sel.value) }));
+    r.appendChild(sel);
+    return r;
+  }
+
+  const reloadText = () => {
+    if (!devReload || !devReload.at) return 'Muse Helper を再読み込みし、muse.ai のタブを読み込み直します';
+    const by = devReload.by === 'auto' ? 'ファイルの変更を検出' : 'ボタン';
+    return `最後の再読み込み: ${MuseHelper.ago(Date.now() - devReload.at)}(${by})`;
+  };
 
   function buildDevSection() {
     const wrap = el('div', 'space-y-1.5');
     wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', '開発者向け'));
     const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
     card.appendChild(switchRow('muse-helper-dev-toggle', 'デベロッパーモード',
-      '調査用のツールを表示し、DevTools の Console で museHelper を使えるようにします。拡張機能のファイルを書き換えると、自動で再読み込みします', () => {
+      '拡張機能のファイルを書き換えると、自動で再読み込みします。調査用のツールを表示し、DevTools の Console で museHelper を使えるようにします', () => {
         devMode = !devMode;
         applyDevAttr();
         syncAll(syncDev);
@@ -1106,33 +1159,73 @@
       }));
     wrap.appendChild(card);
 
+    // 再読み込み(手動・最後に再読み込みした時刻)と、ファイルの確認の間隔
+    const reload = el('div', 'muse-helper-dev-reload bg-fill-secondary-elevated rounded-16 p-1.5 mt-3');
+    const now = actionRow('muse-helper-dev-reload-now', 'button', '今すぐ再読み込み', reloadText(), () => {
+      now.querySelector('.text-caption-1').textContent = '再読み込みしています…';
+      MuseHelper.reloadToUpdate();
+    });
+    reload.appendChild(now);
+    for (const o of MuseHelper.ADVANCED_OPTIONS.filter((x) => x.dev)) {
+      reload.appendChild(divider());
+      reload.appendChild(intervalRow(o));
+    }
+    wrap.appendChild(reload);
+
     const tools = el('div', 'muse-helper-dev-tools bg-fill-secondary-elevated rounded-16 p-1.5 mt-3');
-    DEV_ACTIONS.forEach(([key, title, sub, run], i) => {
-      if (i > 0) tools.appendChild(divider());
-      const r = actionRow('muse-helper-dev-' + key, 'button', title, sub, async () => {
-        const caption = r.querySelector('.text-caption-1');
-        caption.textContent = '実行中…';
-        try {
-          const result = await run();
-          if (result && typeof result === 'object' && result.message) {
-            caption.textContent = result.message;
-          } else {
-            const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-            const ok = await copyText(text);
-            caption.textContent = ok ? `コピーしました(${text.split('\n').length} 行)` : 'コピーできませんでした';
-          }
-        } catch (e) {
-          caption.textContent = `エラー: ${(e && e.message) || e}`;
-        }
-        clearTimeout(r._museTimer);
-        r._museTimer = setTimeout(() => { caption.textContent = sub; }, 6000);
-      });
+    // 画面の構造をコピー(対象を選ぶ)
+    const domSub = '選んだ部分の構造をコピーします(文字は先頭20文字まで。クエリ一覧はキーと状態だけで、★は使用率関連)';
+    const domRow = row('muse-helper-dev-dom');
+    domRow.appendChild(texts('画面の構造をコピー', domSub));
+    // 対象の選択とコピーのボタンは説明の下の行に(横に並べると説明が細くなるため)
+    const controls = el('div', 'flex items-center gap-2 px-3 pb-2');
+    const target = el('select', 'muse-helper-select text-subheadline');
+    target.style.flex = '1';
+    target.style.minWidth = '0';
+    target.setAttribute('aria-label', 'コピーする部分');
+    for (const [v, label] of DOM_TARGETS) {
+      const op = el('option', '', label);
+      op.value = v;
+      target.appendChild(op);
+    }
+    const copyBtn = el('button', 'muse-helper-select text-subheadline', 'コピー');
+    copyBtn.type = 'button';
+    controls.append(target, copyBtn);
+    const selWrap = el('div', 'px-3 pb-2');
+    const selInput = el('input', 'muse-helper-field text-subheadline');
+    selInput.type = 'text';
+    selInput.placeholder = '例: [data-testid="hatch-invite-friends-button"]';
+    selInput.setAttribute('aria-label', 'CSS セレクター');
+    selWrap.appendChild(selInput);
+    selWrap.style.display = 'none';
+    target.addEventListener('change', () => {
+      selWrap.style.display = target.value === 'selector' ? '' : 'none';
+      if (target.value === 'selector') selInput.focus();
+    });
+    const runDom = () => runDevAction(domRow, domSub, () => {
+      if (target.value === 'queries') return devCall('queries');
+      if (target.value === 'selector') {
+        const q = selInput.value.trim();
+        if (!q) throw new Error('CSS セレクターを入力してください');
+        return devCall('dom', q);
+      }
+      return devCall('dom', target.value);
+    });
+    copyBtn.addEventListener('click', runDom);
+    selInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); runDom(); }
+    });
+    tools.append(domRow, controls, selWrap);
+
+    DEV_ACTIONS.forEach(([key, title, sub, run]) => {
+      tools.appendChild(divider());
+      const r = actionRow('muse-helper-dev-' + key, 'button', title, sub, () => runDevAction(r, sub, run));
       tools.appendChild(r);
     });
     wrap.appendChild(tools);
     wrap.appendChild(el('div', 'muse-helper-dev-note px-3 pt-1.5 text-caption-1 text-text-secondary',
-      'Console では museHelper.help() で使い方を表示できます。コピーした内容は ID らしき部分を伏せていますが、' +
-      '画面の文字が少し含まれるため、共有する前に確認してください。'));
+      'Console では museHelper.help() で使い方を表示できます(museHelper.dom("sidebar") など。Claude などが Chrome からページを調べるときも同じものを使えます)。' +
+      'コピーした内容は ID らしき部分を伏せていますが、画面の文字が少し含まれるため、Issue などで公開する前に確認してください。'));
     return wrap;
   }
 
@@ -1154,24 +1247,15 @@
     wrap.appendChild(card);
 
     const opts = el('div', 'muse-helper-adv-opts bg-fill-secondary-elevated rounded-16 p-1.5 mt-3');
-    MuseHelper.ADVANCED_OPTIONS.forEach((o, i) => {
+    // デベロッパーモードでだけ使う間隔(dev)は「開発者向け」に出す
+    MuseHelper.ADVANCED_OPTIONS.filter((o) => !o.dev).forEach((o, i) => {
       if (i > 0) opts.appendChild(divider());
-      const r = row();
-      r.appendChild(texts(o.title, o.sub));
-      const sel = el('select', 'muse-helper-select ms-3 text-subheadline');
-      sel.dataset.adv = o.key;
-      sel.setAttribute('aria-label', o.title);
-      for (const [v, label] of o.choices) {
-        const op = el('option', '', v === o.def ? `${label}(既定)` : label);
-        op.value = String(v);
-        sel.appendChild(op);
-      }
-      sel.addEventListener('change', () => saveAdvanced({ ...adv, [o.key]: Number(sel.value) }));
-      r.appendChild(sel);
-      opts.appendChild(r);
+      opts.appendChild(intervalRow(o));
     });
     opts.appendChild(divider());
-    opts.appendChild(actionRow('muse-helper-adv-reset', 'button', 'すべて既定に戻す', '', () => saveAdvanced({ on: !!adv.on })));
+    // 「開発者向け」の間隔はそのまま残す
+    const keepDev = () => Object.fromEntries(MuseHelper.ADVANCED_OPTIONS.filter((o) => o.dev && adv[o.key] !== undefined).map((o) => [o.key, adv[o.key]]));
+    opts.appendChild(actionRow('muse-helper-adv-reset', 'button', 'すべて既定に戻す', '', () => saveAdvanced({ on: !!adv.on, ...keepDev() })));
     wrap.appendChild(opts);
     return wrap;
   }
@@ -1188,7 +1272,7 @@
     });
     const def = MuseHelper.advanced(null);
     const sub = pane.querySelector('.muse-helper-adv-reset .text-caption-1');
-    const changed = MuseHelper.ADVANCED_OPTIONS.filter((o) => cur[o.key] !== def[o.key]).length;
+    const changed = MuseHelper.ADVANCED_OPTIONS.filter((o) => !o.dev && cur[o.key] !== def[o.key]).length;
     if (sub) sub.textContent = changed ? `${changed} 項目を既定から変更しています` : 'すべて既定の間隔です';
   }
 
@@ -1201,8 +1285,10 @@
     const sw = pane.querySelector('.muse-helper-dev-toggle');
     if (!sw) return;
     sw.setAttribute('aria-checked', String(devMode));
-    pane.querySelector('.muse-helper-dev-tools').style.display = devMode ? '' : 'none';
-    pane.querySelector('.muse-helper-dev-note').style.display = devMode ? '' : 'none';
+    for (const c of ['.muse-helper-dev-reload', '.muse-helper-dev-tools', '.muse-helper-dev-note']) pane.querySelector(c).style.display = devMode ? '' : 'none';
+    // 最後の再読み込み(ボタンを押した直後の「再読み込みしています…」は残す)
+    const cap = pane.querySelector('.muse-helper-dev-reload-now .text-caption-1');
+    if (cap && !/しています/.test(cap.textContent)) cap.textContent = reloadText();
   }
 
   // ---------- 行の部品 ----------
@@ -1441,7 +1527,7 @@
 
   try {
     chrome.storage.local.get([TS_FMT_KEY, TS_MODE_KEY, MuseHelper.UPDATE_KEY, MuseHelper.USAGE_KEY, MuseHelper.HISTORY_KEY, MuseHelper.PACE_BADGE_KEY,
-      MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY, MuseHelper.DEV_MODE_KEY, MuseHelper.ADVANCED_KEY, MuseHelper.SEND_KEY_KEY, MuseHelper.BOOKMARKS_KEY, MuseHelper.SNIPPETS_KEY, MuseHelper.ACTIVITY_KEY, MuseHelper.CHAT_WIDTH_KEY, MuseHelper.FONT_SCALE_KEY,
+      MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY, MuseHelper.DEV_MODE_KEY, MuseHelper.ADVANCED_KEY, MuseHelper.DEV_RELOAD_KEY, MuseHelper.SEND_KEY_KEY, MuseHelper.BOOKMARKS_KEY, MuseHelper.SNIPPETS_KEY, MuseHelper.ACTIVITY_KEY, MuseHelper.CHAT_WIDTH_KEY, MuseHelper.FONT_SCALE_KEY,
       MuseHelper.LOW_CONFIRM_KEY, MuseHelper.SHORTCUT_KEYS_KEY, MuseHelper.DRAFT_HISTORY_KEY, ...Object.keys(prefs)], (v) => {
       applyLayoutValues(v || {});
       bookmarkCount = Object.keys((v && v[MuseHelper.BOOKMARKS_KEY]) || {}).length;
@@ -1454,6 +1540,7 @@
       devMode = !!(v && v[MuseHelper.DEV_MODE_KEY]);
       applyDevAttr();
       adv = (v && v[MuseHelper.ADVANCED_KEY]) || {};
+      devReload = (v && v[MuseHelper.DEV_RELOAD_KEY]) || null;
       drafts = (v && v[MuseHelper.DRAFTS_KEY]) || {};
       tsFormat = v && v[TS_FMT_KEY] === '12' ? '12' : '24';
       tsMode = normMode(v && v[TS_MODE_KEY]);
@@ -1507,6 +1594,10 @@
       if (area === 'local' && changes[MuseHelper.DEV_MODE_KEY]) {
         devMode = !!changes[MuseHelper.DEV_MODE_KEY].newValue;
         applyDevAttr();
+        syncAll(syncDev);
+      }
+      if (area === 'local' && changes[MuseHelper.DEV_RELOAD_KEY]) {
+        devReload = changes[MuseHelper.DEV_RELOAD_KEY].newValue || null;
         syncAll(syncDev);
       }
       if (area === 'local' && changes[MuseHelper.ADVANCED_KEY]) {

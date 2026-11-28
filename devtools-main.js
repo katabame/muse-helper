@@ -51,11 +51,18 @@
       const m = all[all.length - 1];
       return m ? m.parentElement || m : null;
     },
+    // 左のドック(アイコンの列と、開いていれば会話の一覧)
+    sidebar: () => document.querySelector('[data-hatch-dock]'),
+    // 会話の上部(「チャット」ボタン・「←」・右上の「招待」など)
+    header: () => {
+      const l = document.querySelector('[data-testid="hatch-chat-leading-controls"]');
+      return l ? l.parentElement : null;
+    },
   };
-  const ATTRS = ['id', 'role', 'aria-label', 'aria-selected', 'aria-checked', 'data-state', 'data-active', 'type', 'contenteditable',
+  const ATTRS = ['id', 'data-testid', 'data-slot', 'role', 'aria-label', 'aria-selected', 'aria-checked', 'data-state', 'data-active', 'type', 'contenteditable',
     'placeholder', 'data-message-id', 'data-message-role', 'data-message-side', 'title'];
 
-  // target: 'settings' | 'composer' | 'message' | CSS セレクター | 要素
+  // target: 'settings' | 'composer' | 'message' | 'sidebar' | 'header' | CSS セレクター | 要素
   function dom(target = 'settings', { depth = 14, maxLines = 600, text = 20 } = {}) {
     const root = target instanceof Element ? target :
       TARGETS[target] ? TARGETS[target]() : document.querySelector(target);
@@ -165,7 +172,7 @@
     help() {
       return [
         'museHelper.diagnose()                 診断情報',
-        'museHelper.dom(target, opts)          画面の構造。target は "settings" | "composer" | "message" | CSS セレクター | 要素',
+        'museHelper.dom(target, opts)          画面の構造。target は "settings" | "composer" | "message" | "sidebar" | "header" | CSS セレクター | 要素',
         'museHelper.queries(filter, opts)      React Query のクエリ一覧。opts.withData で中身の形も',
         'museHelper.reactState(target)         要素の祖先の React 部品の state / props の形',
         'museHelper.refreshUsage()             使用率を今すぐ取り直す',

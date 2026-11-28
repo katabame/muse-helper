@@ -91,6 +91,7 @@ async function devCheck(intervalMs) {
     if (now === base) return { changed: false };
     await new Promise((r) => setTimeout(r, 500));
     if ((await devHash()) !== now) return { changed: false }; // まだ書き込み中。次の確認で
+    await recordReload('auto');
     chrome.runtime.reload(); // storage.session は再読み込みで消えるので、起動後に新しい中身で記録し直される
     return { changed: true };
   })();
@@ -113,9 +114,14 @@ async function isUnpacked() {
   try { return (await chrome.management.getSelf()).installType === 'development'; } catch (e) {}
   return !chrome.runtime.getManifest().update_url;
 }
-// 拡張機能を再読み込みする(開いている muse.ai のタブの読み込み直しは、押したタブから localStorage で合図する)
-function reloadSelf() {
+// 拡張機能を再読み込みする(開いている muse.ai のタブは、content.js が古いスクリプトになったことに気づいて読み込み直す)
+async function reloadSelf() {
+  await recordReload('manual');
   chrome.runtime.reload();
+}
+// 再読み込みした時刻を残す(設定画面の「開発者向け」に「最後の再読み込み」として出す)
+async function recordReload(by) {
+  try { await chrome.storage.local.set({ [MuseHelper.DEV_RELOAD_KEY]: { at: Date.now(), by } }); } catch (e) {}
 }
 
 // 拡張機能が起動したときのファイルの中身を記録する(デベロッパーモードをあとからオンにしても、

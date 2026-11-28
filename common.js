@@ -358,6 +358,7 @@ globalThis.MuseHelper = (() => {
 
   // ---------- 上級者モード: 更新・確認の間隔 ----------
   // 設定画面の「上級者向け」で変えられる間隔。上級者モードがオフのとき(と、保存された値が選択肢にないとき)は既定値。
+  // dev: true の項目は「開発者向け」に出し、上級者モードのオン/オフに関係なく効く(デベロッパーモードでだけ使うため)。
   // choices: [値, 表示]。0 は「自動では確認しない」
   const ADVANCED_OPTIONS = [
     { key: 'usageMin', unit: 60000, def: 5, title: '使用率の自動取得',
@@ -369,15 +370,15 @@ globalThis.MuseHelper = (() => {
     { key: 'diskSec', unit: 1000, def: 1.5, title: 'インストールしたフォルダの確認',
       sub: 'フォルダを上書きしたあと「再読み込みして更新」が出るまでの間隔です(muse.ai を表示している間。通信はしません)',
       choices: [[1.5, '1.5秒ごと'], [5, '5秒ごと'], [15, '15秒ごと'], [60, '1分ごと'], [300, '5分ごと'], [0, 'ページを開いたときだけ']] },
-    { key: 'devSec', unit: 1000, def: 1.5, title: 'デベロッパーモードのファイルの確認',
-      sub: 'デベロッパーモードで、ファイルの書き換えを検出して自動で再読み込みするまでの間隔です',
+    { key: 'devSec', unit: 1000, def: 1.5, dev: true, title: 'ファイルの確認の間隔',
+      sub: 'ファイルの書き換えを検出して自動で再読み込みするまでの間隔です(muse.ai のタブを表示している間)',
       choices: [[0.5, '0.5秒ごと'], [1, '1秒ごと'], [1.5, '1.5秒ごと'], [3, '3秒ごと'], [5, '5秒ごと']] },
   ];
   // 保存された設定 { on, usageMin, ... } から、実際に使う値 { usageMin, ... } を返す
   function advanced(v) {
     const r = {};
     for (const o of ADVANCED_OPTIONS) {
-      const x = v && v.on ? v[o.key] : undefined;
+      const x = v && (v.on || o.dev) ? v[o.key] : undefined;
       r[o.key] = o.choices.some(([c]) => c === x) ? x : o.def;
     }
     return r;
@@ -405,7 +406,8 @@ globalThis.MuseHelper = (() => {
     NOTIFIED_KEY: 'museNotified', // 通知済みの ID(同じ週に同じ通知を繰り返さない)
     NOTIFY_LOW: 20, // 残りがこの % 以下になったら通知
     DEV_MODE_KEY: 'museDevMode', // true なら設定画面に開発者向けツールを出し、Console に museHelper を公開
-    ADVANCED_KEY: 'museAdvanced', // { on, usageMin, releaseMin, diskSec, devSec } 上級者モード(on のときだけ間隔の変更が効く)
+    ADVANCED_KEY: 'museAdvanced', // { on, usageMin, releaseMin, diskSec, devSec } 上級者モード(on のときだけ間隔の変更が効く。devSec は常に)
+    DEV_RELOAD_KEY: 'museDevReload', // { at, by: 'auto' | 'manual' } 最後に拡張機能を再読み込みした時刻(設定画面の「開発者向け」に出す)
     ADVANCED_OPTIONS, advanced, advancedLabel,
     USAGE_INTERVAL_ATTR: 'data-muse-helper-usage-interval', // 使用率の自動取得の間隔(ミリ秒)を usage-main.js(MAIN world)へ伝える属性
     HISTORY_KEY: 'museUsageHistory', // [{ used, at }, ...] 使用率の記録(直近ペースの計算用)
@@ -421,7 +423,9 @@ globalThis.MuseHelper = (() => {
     CHAT_WIDTH_KEY: 'museChatWidth', // 'narrow' | 'default' | 'wide' | 'full' 本文の幅
     FONT_SCALE_KEY: 'museFontScale', // 80 | 90 | 100 | 110 | 125 本文の文字の大きさ(%)
     COLLAPSE_KEY: 'museCollapse', // true なら長いメッセージを折りたたむ(既定はオフ)
+    HIDE_INVITE_KEY: 'museHideInvite', // true なら右上の「招待」ボタンを隠す(既定は表示)
     BOOKMARK_SORT_KEY: 'museBookmarkSort', // 'chat'(会話ごと)| 'added'(追加した順)
+    SIDEBAR_PIN_KEY: 'museSidebarPin', // true ならチャットのサイドバー(会話の一覧)を開いたままにする(sidebar-pin.js)
     SIDEBAR_BADGE_KEY: 'museSidebarBadge', // false ならサイドバーの会話にブックマーク数を出さない(既定は出す)
     BOOKMARK_AUTOLOAD_KEY: 'museBookmarkAutoLoad', // false なら読み込まれていないブックマークへ移動するとき過去のメッセージを自動で読み込まない(既定は読み込む)
     THREAD_NAMES_KEY: 'museThreadNames', // { [会話のパス]: サイドバーでの名前 } 開いたときに覚える(★の表示用)
