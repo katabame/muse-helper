@@ -424,6 +424,7 @@ globalThis.MuseHelper = (() => {
     FONT_SCALE_KEY: 'museFontScale', // 80 | 90 | 100 | 110 | 125 本文の文字の大きさ(%)
     COLLAPSE_KEY: 'museCollapse', // true なら長いメッセージを折りたたむ(既定はオフ)
     HIDE_INVITE_KEY: 'museHideInvite', // true なら右上の「招待」ボタンを隠す(既定は表示)
+    HIDE_APP_DOWNLOAD_KEY: 'museHideAppDownload', // true なら左下の「Museアプリをダウンロード」ボタンを隠す(既定は表示)
     BOOKMARK_SORT_KEY: 'museBookmarkSort', // 'chat'(会話ごと)| 'added'(追加した順)
     SIDEBAR_PIN_KEY: 'museSidebarPin', // true ならチャットのサイドバー(会話の一覧)を開いたままにする(sidebar-pin.js)
     SIDEBAR_BADGE_KEY: 'museSidebarBadge', // false ならサイドバーの会話にブックマーク数を出さない(既定は出す)

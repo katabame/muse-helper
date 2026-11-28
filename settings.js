@@ -38,6 +38,7 @@
     [MuseHelper.REPLY_PREVIEW_KEY]: false,
     [MuseHelper.COLLAPSE_KEY]: false,
     [MuseHelper.HIDE_INVITE_KEY]: false,
+    [MuseHelper.HIDE_APP_DOWNLOAD_KEY]: false,
     [MuseHelper.SIDEBAR_BADGE_KEY]: true,
     [MuseHelper.BOOKMARK_AUTOLOAD_KEY]: true,
   };
@@ -236,6 +237,8 @@
       'とても長いメッセージを途中まで表示し、時刻の横の「全文を表示」で開きます。表示が崩れる場合はオフにしてください'));
     viewExtras.appendChild(divider());
     viewExtras.appendChild(prefSwitch(MuseHelper.HIDE_INVITE_KEY, '「招待」ボタンを隠す', '画面右上の「招待」ボタンを表示しません'));
+    viewExtras.appendChild(divider());
+    viewExtras.appendChild(prefSwitch(MuseHelper.HIDE_APP_DOWNLOAD_KEY, '「Museアプリをダウンロード」ボタンを隠す', '画面左下のアイコンの列にある、アプリのダウンロードのボタンを表示しません'));
     view.appendChild(viewExtras);
     body.appendChild(view);
 
