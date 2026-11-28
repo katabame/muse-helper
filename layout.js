@@ -4,6 +4,7 @@
 // - 長いメッセージの折りたたみ: 本文の高さが一定を超えるメッセージを途中まで表示し、
 //   時刻ラベルの横のボタンで開閉する。Muse の要素には属性(data-muse-collapse)だけを付け、見た目は CSS で変える
 // - 右上の「招待」ボタンと、左下の「Museアプリをダウンロード」ボタンを隠す(既定は表示)
+// - 会話の途中に Muse が出す時刻の区切り(「19:59」「11月25日 16:38」)を、設定の時刻の表記(12時間表記なら「4:38 pm」)に合わせる
 (() => {
   'use strict';
   const M = MuseHelper;
@@ -63,6 +64,30 @@
     if (on) el.setAttribute('data-muse-collapse', '1');
     else el.removeAttribute('data-muse-collapse');
   }
+
+  // ---------- Muse の時刻の区切りの表記 ----------
+  // 会話の途中の中央寄せの時刻(div.text-center > span.text-caption-1)。Muse は常に24時間表記なので、
+  // 12時間表記のときは末尾の「16:38」を「4:38 pm」に書き換える。元の文字は data-muse-time24 に残し、24時間表記に戻すときに使う。
+  // Muse が中身を変えたら(元の文字とも書き換えた文字とも違えば)、それを新しい元の文字とみなす
+  const TIME_RE = /(\d{1,2}):(\d{2})$/;
+  const to12 = (s) => s.replace(TIME_RE, (_, h, m) => `${h % 12 || 12}:${m} ${h < 12 ? 'am' : 'pm'}`);
+  function convertTimes() {
+    const fmt12 = M.fmt12();
+    for (const span of document.querySelectorAll('div.text-center > span.text-caption-1')) {
+      const t = span.firstChild;
+      if (span.childNodes.length !== 1 || !t || t.nodeType !== 3 || M.isOwn(span)) continue;
+      const cur = t.data;
+      if (span.dataset.museTime24 == null || (cur !== span.dataset.museTime24 && cur !== span.dataset.museTime12)) {
+        if (!TIME_RE.test(cur) || cur.length > 30) continue;
+        span.dataset.museTime24 = cur;
+        span.dataset.museTime12 = to12(cur);
+      }
+      const want = fmt12 ? span.dataset.museTime12 : span.dataset.museTime24;
+      if (cur !== want) t.data = want;
+    }
+  }
+  // 設定で表記を変えたとき(content.js が <html> の data-muse-ts-format を変える)
+  new MutationObserver(convertTimes).observe(document.documentElement, { attributes: true, attributeFilter: ['data-muse-ts-format'] });
 
   function scan() {
     if (!M.alive()) return;
@@ -130,7 +155,10 @@
   M.collapse = { expand };
 
   let timer;
+  let timeTimer = 0;
   new MutationObserver((list) => {
+    // 時刻の区切りは、変化が続いていても0.1秒以内に書き換える(待ち続けて24時間表記のまま残らないよう、延ばさない)
+    if (!timeTimer) timeTimer = setTimeout(() => { timeTimer = 0; if (M.alive()) convertTimes(); }, 100);
     if (!collapse) return;
     if (list.every((m) => m.target.closest && m.target.closest('.' + BTN))) return;
     clearTimeout(timer);
