@@ -116,7 +116,11 @@
     menu.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       const items = [...menu.querySelectorAll('[role="menuitem"]:not([data-disabled])')];
-      const i = items.indexOf(document.activeElement);
+      // 今の位置は、キーを押した要素で決める(document.activeElement は使わない)。Muse はメニューより外側で
+      // 先にキーを受け取ってフォーカスを動かすことがある(リアクションの列で ↑ を押すと「シェアする」へ)ので、
+      // 動いた後の位置からさらに動かしてしまわないように
+      const cur = e.target instanceof Element ? e.target.closest('[role="menuitem"]') : null;
+      const i = items.indexOf(cur);
       if (i < 0) return;
       const to = items[e.key === 'ArrowDown' ? i + 1 : i - 1];
       if (items[i] !== item && to !== item) return; // 複製した項目に関係しない移動は Radix に任せる
