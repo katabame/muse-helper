@@ -1,6 +1,6 @@
-// GitHub Releases の最新版を1時間ごとに確認し、結果を chrome.storage に保存する。
+// GitHub Releases の最新版を1時間ごと(上級者モードで変更可)に確認し、結果を chrome.storage に保存する。
 importScripts('common.js');
-const { UPDATE_KEY, API_LATEST } = MuseHelper;
+const { UPDATE_KEY, API_LATEST, ADVANCED_KEY } = MuseHelper;
 const ALARM = 'museUpdateCheck';
 const DISK_ALARM = 'museDiskCheck'; // フォルダの確認(1分ごと。muse.ai のタブを表示していない間の予備。GitHub には通信しない)
 
@@ -52,7 +52,7 @@ async function emojiNames() {
 }
 
 // ---------- デベロッパーモード: ファイルが変わったら自動で再読み込み ----------
-// デベロッパーモードのとき、muse.ai のタブ(content.js)が1.5秒ごとに museDevCheck を送ってくる。
+// デベロッパーモードのとき、muse.ai のタブ(content.js)が1.5秒ごと(上級者モードで変更可)に museDevCheck を送ってくる。
 // 拡張機能のファイル(manifest.json・background・content scripts・同梱のデータ)の中身のハッシュを、
 // 拡張機能が起動したときのもの(storage.session に保存。service worker が止まって起き直しても引き継ぐ)と比べ、
 // 変わっていれば、書き込みの途中で読まないよう 0.5 秒おいてもう一度確かめてから再読み込みする。
@@ -79,7 +79,7 @@ async function devHash() {
 }
 async function devCheck() {
   if (devChecking) return devChecking;
-  if (Date.now() - devLastAt < 1000) return { changed: false };
+  if (Date.now() - devLastAt < 400) return { changed: false };
   devChecking = (async () => {
     devLastAt = Date.now();
     const base = (await chrome.storage.session.get(DEV_BASE_KEY))[DEV_BASE_KEY];
@@ -122,16 +122,36 @@ async function recordDevBase() {
   try { await chrome.storage.session.set({ [DEV_BASE_KEY]: await devHash() }); } catch (e) {}
 }
 
-function schedule() {
-  chrome.alarms.create(ALARM, { periodInMinutes: 60 });
-  chrome.alarms.create(DISK_ALARM, { periodInMinutes: 1 });
-  check();
+// 確認の間隔(上級者モードの設定)に合わせてアラームを作る。間隔が変わっていなければ作り直さない
+// (作り直すと次の確認までの時間が最初からになるため)。0 なら自動では確認しない
+async function settings() {
+  try { return MuseHelper.advanced((await chrome.storage.local.get(ADVANCED_KEY))[ADVANCED_KEY]); } catch (e) { return MuseHelper.advanced(null); }
+}
+async function setAlarm(name, minutes) {
+  const cur = await chrome.alarms.get(name);
+  if (!minutes) { if (cur) await chrome.alarms.clear(name); return; }
+  if (!cur || cur.periodInMinutes !== minutes) chrome.alarms.create(name, { periodInMinutes: minutes });
+}
+async function applyAlarms() {
+  const a = await settings();
+  await setAlarm(ALARM, a.releaseMin);
+  // フォルダの確認は予備なので、1分より短くはしない
+  await setAlarm(DISK_ALARM, a.diskSec ? Math.max(1, a.diskSec / 60) : 0);
+  return a;
+}
+
+async function schedule() {
+  const a = await applyAlarms();
+  if (a.releaseMin) check();
   scheduleReset();
   recordDevBase();
 }
 
 chrome.runtime.onInstalled.addListener(schedule); // インストール時・拡張機能の更新時
 chrome.runtime.onStartup.addListener(schedule); // Chrome 起動時
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes[ADVANCED_KEY]) applyAlarms();
+});
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === ALARM) check();
   if (a.name === DISK_ALARM) checkDisk();

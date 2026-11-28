@@ -356,6 +356,39 @@ globalThis.MuseHelper = (() => {
     });
   }
 
+  // ---------- 上級者モード: 更新・確認の間隔 ----------
+  // 設定画面の「上級者向け」で変えられる間隔。上級者モードがオフのとき(と、保存された値が選択肢にないとき)は既定値。
+  // choices: [値, 表示]。0 は「自動では確認しない」
+  const ADVANCED_OPTIONS = [
+    { key: 'usageMin', unit: 60000, def: 5, title: '使用率の自動取得',
+      sub: 'Muse から使用率を取り直す間隔です。短くするとバッジや予測が新しくなりますが、Muse への通信が増えます(複数のタブで開いていても取得するのは1つのタブだけです)',
+      choices: [[1, '1分ごと'], [2, '2分ごと'], [3, '3分ごと'], [5, '5分ごと'], [10, '10分ごと'], [15, '15分ごと'], [30, '30分ごと']] },
+    { key: 'releaseMin', unit: 60000, def: 60, title: '新しい版の確認(GitHub)',
+      sub: 'GitHub に新しいリリースがあるかを確認する間隔です。「確認しない」にしても、アップデートの「今すぐ確認」で確認できます',
+      choices: [[15, '15分ごと'], [30, '30分ごと'], [60, '1時間ごと'], [180, '3時間ごと'], [360, '6時間ごと'], [720, '12時間ごと'], [1440, '24時間ごと'], [0, '確認しない']] },
+    { key: 'diskSec', unit: 1000, def: 1.5, title: 'インストールしたフォルダの確認',
+      sub: 'フォルダを上書きしたあと「再読み込みして更新」が出るまでの間隔です(muse.ai を表示している間。通信はしません)',
+      choices: [[1.5, '1.5秒ごと'], [5, '5秒ごと'], [15, '15秒ごと'], [60, '1分ごと'], [300, '5分ごと'], [0, 'ページを開いたときだけ']] },
+    { key: 'devSec', unit: 1000, def: 1.5, title: 'デベロッパーモードのファイルの確認',
+      sub: 'デベロッパーモードで、ファイルの書き換えを検出して自動で再読み込みするまでの間隔です',
+      choices: [[0.5, '0.5秒ごと'], [1, '1秒ごと'], [1.5, '1.5秒ごと'], [3, '3秒ごと'], [5, '5秒ごと']] },
+  ];
+  // 保存された設定 { on, usageMin, ... } から、実際に使う値 { usageMin, ... } を返す
+  function advanced(v) {
+    const r = {};
+    for (const o of ADVANCED_OPTIONS) {
+      const x = v && v.on ? v[o.key] : undefined;
+      r[o.key] = o.choices.some(([c]) => c === x) ? x : o.def;
+    }
+    return r;
+  }
+  // 値の表示(「5分ごと」など)
+  const advancedLabel = (key, v) => {
+    const o = ADVANCED_OPTIONS.find((x) => x.key === key);
+    const c = o && o.choices.find(([x]) => x === v);
+    return c ? c[1] : '';
+  };
+
   return {
     REPO,
     UPDATE_KEY: 'museUpdate', // { latest, url, etag, checkedAt, error, disk, unpacked }(disk: フォルダのファイルのバージョン)
@@ -372,6 +405,9 @@ globalThis.MuseHelper = (() => {
     NOTIFIED_KEY: 'museNotified', // 通知済みの ID(同じ週に同じ通知を繰り返さない)
     NOTIFY_LOW: 20, // 残りがこの % 以下になったら通知
     DEV_MODE_KEY: 'museDevMode', // true なら設定画面に開発者向けツールを出し、Console に museHelper を公開
+    ADVANCED_KEY: 'museAdvanced', // { on, usageMin, releaseMin, diskSec, devSec } 上級者モード(on のときだけ間隔の変更が効く)
+    ADVANCED_OPTIONS, advanced, advancedLabel,
+    USAGE_INTERVAL_ATTR: 'data-muse-helper-usage-interval', // 使用率の自動取得の間隔(ミリ秒)を usage-main.js(MAIN world)へ伝える属性
     HISTORY_KEY: 'museUsageHistory', // [{ used, at }, ...] 使用率の記録(直近ペースの計算用)
     BOOKMARKS_KEY: 'museBookmarks', // { [メッセージID]: { path, title, text, at, user, savedAt } }
     SHORTCUTS_KEY: 'museShortcuts', // false ならキーボードショートカットを使わない(既定は使う)

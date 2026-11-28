@@ -429,7 +429,7 @@
     });
   } catch (e) {}
 
-  // インストールしたフォルダが新しくなっていないか、ページを開いたときと、表示中は1.5秒ごとに確認する
+  // インストールしたフォルダが新しくなっていないか、ページを開いたときと、表示中は1.5秒ごと(上級者モードで変更可)に確認する
   // (フォルダを上書きしたら、すぐに「再読み込みして更新」を出すため。background.js の checkDisk は
   // manifest.json を読むだけで、変わったときだけ保存する)。
   // ストアからインストールした拡張機能(フォルダが変わらない)と、裏にあるタブでは確認しない
@@ -438,7 +438,7 @@
     try { chrome.runtime.sendMessage({ type: 'museCheckDisk' }, () => void chrome.runtime.lastError); } catch (e) {}
   };
   try { chrome.runtime.sendMessage({ type: 'museCheckDisk' }, () => void chrome.runtime.lastError); } catch (e) {}
-  setInterval(checkDisk, 1500);
+  let diskTimer = 0;
 
   // 拡張機能が更新・再読み込みされたら(「再読み込みして更新」・chrome://extensions の ↻ など)、このタブも読み込み直す。
   // 古いスクリプトは chrome.* が使えず下書きも保存できないので、入力欄の文章はこのタブの sessionStorage に預け、
@@ -472,21 +472,42 @@
   setInterval(learnAssistant, 10000);
 
   // デベロッパーモードのとき: 拡張機能のファイルが変わったら自動で再読み込みしてもらう(background.js の devCheck)。
-  // 1.5秒ごとに確認を頼む(background が止まっていても、この依頼で起きる)
+  // 1.5秒ごと(上級者モードで変更可)に確認を頼む(background が止まっていても、この依頼で起きる)
   let devTimer = 0;
-  function devWatch(on) {
+  let devOn = false;
+  let adv = MuseHelper.advanced(null); // 上級者モードの間隔(オフなら既定値)
+  function devWatch() {
     clearInterval(devTimer);
     devTimer = 0;
-    if (!on) return;
+    if (!devOn) return;
     devTimer = setInterval(() => {
       if (!MuseHelper.alive()) return clearInterval(devTimer);
       try { chrome.runtime.sendMessage({ type: 'museDevCheck' }, () => void chrome.runtime.lastError); } catch (e) {}
-    }, 1500);
+    }, adv.devSec * 1000);
   }
+  // 上級者モードの間隔を反映する(フォルダの確認・デベロッパーモードの確認・使用率の自動取得)
+  function applyAdvanced(v) {
+    const prevDev = adv.devSec;
+    adv = MuseHelper.advanced(v);
+    clearInterval(diskTimer);
+    diskTimer = adv.diskSec ? setInterval(checkDisk, adv.diskSec * 1000) : 0;
+    if (adv.devSec !== prevDev) devWatch();
+    // usage-main.js(MAIN world)は chrome.storage を読めないので、属性で伝える
+    document.documentElement.setAttribute(MuseHelper.USAGE_INTERVAL_ATTR, String(adv.usageMin * 60000));
+    // バッジや設定画面の「◯分ごと」を新しい間隔にするため、状態を送り直してもらう
+    try { window.postMessage({ source: 'muse-helper', type: 'usage-status-request' }, location.origin); } catch (e) {}
+  }
+  applyAdvanced(null);
   try {
-    chrome.storage.local.get(MuseHelper.DEV_MODE_KEY, (v) => devWatch(!!(v && v[MuseHelper.DEV_MODE_KEY])));
+    chrome.storage.local.get([MuseHelper.DEV_MODE_KEY, MuseHelper.ADVANCED_KEY], (v) => {
+      devOn = !!(v && v[MuseHelper.DEV_MODE_KEY]);
+      applyAdvanced(v && v[MuseHelper.ADVANCED_KEY]);
+      devWatch();
+    });
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes[MuseHelper.DEV_MODE_KEY]) devWatch(!!changes[MuseHelper.DEV_MODE_KEY].newValue);
+      if (area !== 'local') return;
+      if (changes[MuseHelper.ADVANCED_KEY]) applyAdvanced(changes[MuseHelper.ADVANCED_KEY].newValue);
+      if (changes[MuseHelper.DEV_MODE_KEY]) { devOn = !!changes[MuseHelper.DEV_MODE_KEY].newValue; devWatch(); }
     });
   } catch (e) {}
 

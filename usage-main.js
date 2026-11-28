@@ -1,4 +1,4 @@
-// ページ側(MAIN world)で動作: Muse の React Query キャッシュから使用率のデータを読み、5分ごとに取り直す。
+// ページ側(MAIN world)で動作: Muse の React Query キャッシュから使用率のデータを読み、5分ごと(上級者モードで変更可)に取り直す。
 //
 // 使用率は ["subscription", <ユーザーID>, "agreement"] というクエリに入っている
 // ({ usage: { percentUsed, resetsAt, quotaStatus }, usageRowLabel, topupBalance, topupTotal, ... })。
@@ -13,18 +13,21 @@
   if (window.__museUsageInstalled) return;
   window.__museUsageInstalled = true;
 
-  const REFRESH_MS = 5 * 60 * 1000; // 自動更新の間隔
+  const REFRESH_MS = 5 * 60 * 1000; // 自動更新の間隔(既定)
+  // 上級者モードで変えた間隔(content.js が <html> の属性で伝える。1分未満にはしない)
+  const INTERVAL_ATTR = 'data-muse-helper-usage-interval';
+  const refreshMs = () => Math.max(60000, Number(document.documentElement.getAttribute(INTERVAL_ATTR)) || REFRESH_MS);
   const MSG = 'muse-helper';
 
   let qc = null; // QueryClient
   let opts = null; // 覚えた { queryKey, queryFn }
   let lastFetchAt = 0; // 最後に取得できた時刻
-  let lastAttemptAt = 0; // 最後に取得を試みた時刻(失敗しても5分は間をあける)
+  let lastAttemptAt = 0; // 最後に取得を試みた時刻(失敗しても自動更新の間隔ぶんは間をあける)
   let lastError = '';
   let fetching = false;
   const dbg = { findAttempts: 0, events: 0, usageEvents: 0, emits: 0, lastEmit: null, posts: 0 };
 
-  // どれかのタブが最後に取得を試みた時刻(muse.ai を複数のタブで開いていても、5分に1回だけ取りに行くため)。
+  // どれかのタブが最後に取得を試みた時刻(muse.ai を複数のタブで開いていても、間隔ごとに1回だけ取りに行くため)。
   // 取得した値は chrome.storage 経由でほかのタブにも届く
   const SHARED_KEY = 'museHelperUsageFetchAt';
   const sharedAt = () => { try { return Number(localStorage.getItem(SHARED_KEY)) || 0; } catch (e) { return 0; } };
@@ -47,7 +50,7 @@
   function postStatus() {
     let err = lastError;
     if (!opts && recipe && !recipeOk()) err = 'Muse が更新されたため、設定画面の「一般」を一度開き直してください';
-    post('usage-status', { auto: !!opts || recipeOk(), lastFetchAt, lastError: err, intervalMs: REFRESH_MS });
+    post('usage-status', { auto: !!opts || recipeOk(), lastFetchAt, lastError: err, intervalMs: refreshMs() });
   }
 
   // クエリの結果を渡す(必要な項目だけ)
@@ -240,8 +243,8 @@
       }
     }
     // タブが裏にあっても取り直す(バッジや通知・使用率の記録を新しく保つため)。
-    // ただし、ほかのタブが5分以内に取りに行っていれば任せる
-    if (fetching || Date.now() - Math.max(lastFetchAt, lastAttemptAt, sharedAt()) < REFRESH_MS) return;
+    // ただし、ほかのタブが間隔の内に取りに行っていれば任せる
+    if (fetching || Date.now() - Math.max(lastFetchAt, lastAttemptAt, sharedAt()) < refreshMs()) return;
     if (qc && opts) { markShared(); refresh(); }
     else if (recipeOk()) { markShared(); replay(); }
   }
@@ -275,7 +278,7 @@
   window.addEventListener('message', (e) => {
     if (e.source === window && e.data && e.data.source === MSG && e.data.type === 'usage-status-request') postStatus();
   });
-  // タブに戻ってきたとき、前回から5分以上たっていればすぐ取り直す
+  // タブに戻ってきたとき、前回から間隔以上たっていればすぐ取り直す
   // (裏のタブのタイマーは Chrome により間引かれ、1分に1回程度になることがある)
   document.addEventListener('visibilitychange', tick);
   setInterval(tick, 5000);

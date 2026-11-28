@@ -24,6 +24,7 @@
   let drafts = {}; // 保存中の下書き { [path]: { text, at } }
   let confirmClearUntil = 0; // 「すべて削除」の確認待ちの期限
   let devMode = false; // デベロッパーモード
+  let adv = {}; // 上級者モード { on, usageMin, releaseMin, diskSec, devSec }(保存された値のまま)
   let sendKey = 'enter'; // 'enter' | 'mod-enter'
   // オン/オフだけの設定(既定値)。スイッチは data-pref で対応付ける
   const prefs = {
@@ -78,6 +79,11 @@
     .${PANE} .muse-helper-field { box-sizing: border-box; width: 100%; padding: 6px 10px; font: inherit; color: inherit; background: transparent;
       border: 1px solid rgba(128,128,128,.4); border-radius: 8px; outline: none; }
     .${PANE} .muse-helper-field:focus { border-color: #2a78d6; }
+    /* 上級者向けの間隔の選択 */
+    .${PANE} .muse-helper-select { flex: none; padding: 4px 8px; font: inherit; color: inherit; background: transparent;
+      border: 1px solid rgba(128,128,128,.4); border-radius: 8px; cursor: pointer; }
+    .${PANE} .muse-helper-select:focus { outline: none; border-color: #2a78d6; }
+    html.dark .${PANE} .muse-helper-select { color-scheme: dark; }
     .${PANE} textarea.muse-helper-field { resize: vertical; min-height: 84px; line-height: 1.5; }
     .${PANE} .muse-helper-btn { box-sizing: border-box; padding: 4px 12px; border-radius: 8px; font: inherit; cursor: pointer;
       color: inherit; background: rgba(128,128,128,.14); border: none; }
@@ -250,6 +256,7 @@
     body.appendChild(buildDraftsSection());
     body.appendChild(buildBackupSection());
     body.appendChild(buildUpdateSection());
+    body.appendChild(buildAdvancedSection());
     body.appendChild(buildDevSection());
 
     pane.append(header, body);
@@ -1075,7 +1082,7 @@
       const storage = await storageSummary();
       return JSON.stringify({ version: MuseHelper.version(), time: new Date().toString(), page, storage }, null, 2);
     }],
-    ['refresh', '使用率を今すぐ取得', '5分ごとの自動更新を待たずに取り直します(コピーはしません)', async () => {
+    ['refresh', '使用率を今すぐ取得', '自動更新を待たずに取り直します(コピーはしません)', async () => {
       const r = await devCall('refreshUsage');
       return { message: r.ok ? `取得しました(${r.lastFetchAt})` : `取得できませんでした: ${r.reason || r.lastError}` };
     }],
@@ -1129,6 +1136,62 @@
     return wrap;
   }
 
+  // ---------- 上級者向け(更新・確認の間隔) ----------
+  function saveAdvanced(next) {
+    adv = next;
+    syncAll(syncAdvanced);
+    syncAll(syncUpdate);
+    try { chrome.storage.local.set({ [MuseHelper.ADVANCED_KEY]: adv }); } catch (e) {}
+  }
+
+  function buildAdvancedSection() {
+    const wrap = el('div', 'space-y-1.5');
+    wrap.appendChild(el('h2', 'text-subheadline-emphasized text-text-secondary mb-1.5', '上級者向け'));
+    const card = el('div', 'bg-fill-secondary-elevated rounded-16 p-1.5');
+    card.appendChild(switchRow('muse-helper-adv-toggle', '上級者モード',
+      '使用率の自動取得や更新の確認の間隔を変更できるようにします。オフにすると、選んだ値は残したまま既定の間隔に戻ります',
+      () => saveAdvanced({ ...adv, on: !adv.on })));
+    wrap.appendChild(card);
+
+    const opts = el('div', 'muse-helper-adv-opts bg-fill-secondary-elevated rounded-16 p-1.5 mt-3');
+    MuseHelper.ADVANCED_OPTIONS.forEach((o, i) => {
+      if (i > 0) opts.appendChild(divider());
+      const r = row();
+      r.appendChild(texts(o.title, o.sub));
+      const sel = el('select', 'muse-helper-select ms-3 text-subheadline');
+      sel.dataset.adv = o.key;
+      sel.setAttribute('aria-label', o.title);
+      for (const [v, label] of o.choices) {
+        const op = el('option', '', v === o.def ? `${label}(既定)` : label);
+        op.value = String(v);
+        sel.appendChild(op);
+      }
+      sel.addEventListener('change', () => saveAdvanced({ ...adv, [o.key]: Number(sel.value) }));
+      r.appendChild(sel);
+      opts.appendChild(r);
+    });
+    opts.appendChild(divider());
+    opts.appendChild(actionRow('muse-helper-adv-reset', 'button', 'すべて既定に戻す', '', () => saveAdvanced({ on: !!adv.on })));
+    wrap.appendChild(opts);
+    return wrap;
+  }
+
+  function syncAdvanced(pane) {
+    const sw = pane.querySelector('.muse-helper-adv-toggle');
+    if (!sw) return;
+    sw.setAttribute('aria-checked', String(!!adv.on));
+    pane.querySelector('.muse-helper-adv-opts').style.display = adv.on ? '' : 'none';
+    const cur = MuseHelper.advanced(adv);
+    pane.querySelectorAll('select[data-adv]').forEach((sel) => {
+      const v = String(cur[sel.dataset.adv]);
+      if (sel.value !== v) sel.value = v;
+    });
+    const def = MuseHelper.advanced(null);
+    const sub = pane.querySelector('.muse-helper-adv-reset .text-caption-1');
+    const changed = MuseHelper.ADVANCED_OPTIONS.filter((o) => cur[o.key] !== def[o.key]).length;
+    if (sub) sub.textContent = changed ? `${changed} 項目を既定から変更しています` : 'すべて既定の間隔です';
+  }
+
   function applyDevAttr() {
     if (devMode) document.documentElement.setAttribute('data-muse-helper-dev', '1');
     else document.documentElement.removeAttribute('data-muse-helper-dev');
@@ -1178,7 +1241,7 @@
     btn.setAttribute('role', 'button');
     btn.setAttribute('tabindex', '0');
     btn.style.cursor = 'pointer';
-    btn.appendChild(texts('今すぐ確認', '新しい版は1時間ごと、インストールしたフォルダは muse.ai を表示している間1.5秒ごとに自動で確認しています'));
+    btn.appendChild(texts('今すぐ確認', ''));
     const run = () => {
       if (checking) return;
       checking = true;
@@ -1260,10 +1323,17 @@
       ? 'インストールしたフォルダを新しくすると(git pull や zip の上書き)、数秒でここに「再読み込みして更新」が出ます'
       : 'ダウンロードして読み込み直すと更新できます';
     btnTitle.textContent = checking ? '確認中…' : '今すぐ確認';
+    // 確認の間隔(上級者モードで変えていればその値)
+    const a = MuseHelper.advanced(adv), L = MuseHelper.advancedLabel;
+    const btnSub = pane.querySelector('.muse-helper-upd-btn .text-caption-1');
+    if (btnSub) btnSub.textContent =
+      (a.releaseMin ? `新しい版は${L('releaseMin', a.releaseMin)}` : '新しい版は自動では確認せず') + '、インストールしたフォルダは' +
+      (a.diskSec ? ` muse.ai を表示している間${L('diskSec', a.diskSec)}に自動で確認しています` : ' muse.ai のページを開いたときに確認しています');
   }
 
   function syncPane(pane) {
     syncDev(pane);
+    syncAdvanced(pane);
     syncUpdate(pane);
     syncPace(pane);
     syncDrafts(pane);
@@ -1371,7 +1441,7 @@
 
   try {
     chrome.storage.local.get([TS_FMT_KEY, TS_MODE_KEY, MuseHelper.UPDATE_KEY, MuseHelper.USAGE_KEY, MuseHelper.HISTORY_KEY, MuseHelper.PACE_BADGE_KEY,
-      MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY, MuseHelper.DEV_MODE_KEY, MuseHelper.SEND_KEY_KEY, MuseHelper.BOOKMARKS_KEY, MuseHelper.SNIPPETS_KEY, MuseHelper.ACTIVITY_KEY, MuseHelper.CHAT_WIDTH_KEY, MuseHelper.FONT_SCALE_KEY,
+      MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY, MuseHelper.DEV_MODE_KEY, MuseHelper.ADVANCED_KEY, MuseHelper.SEND_KEY_KEY, MuseHelper.BOOKMARKS_KEY, MuseHelper.SNIPPETS_KEY, MuseHelper.ACTIVITY_KEY, MuseHelper.CHAT_WIDTH_KEY, MuseHelper.FONT_SCALE_KEY,
       MuseHelper.LOW_CONFIRM_KEY, MuseHelper.SHORTCUT_KEYS_KEY, MuseHelper.DRAFT_HISTORY_KEY, ...Object.keys(prefs)], (v) => {
       applyLayoutValues(v || {});
       bookmarkCount = Object.keys((v && v[MuseHelper.BOOKMARKS_KEY]) || {}).length;
@@ -1383,6 +1453,7 @@
       draftsEnabled = !(v && v[MuseHelper.DRAFTS_ENABLED_KEY] === false);
       devMode = !!(v && v[MuseHelper.DEV_MODE_KEY]);
       applyDevAttr();
+      adv = (v && v[MuseHelper.ADVANCED_KEY]) || {};
       drafts = (v && v[MuseHelper.DRAFTS_KEY]) || {};
       tsFormat = v && v[TS_FMT_KEY] === '12' ? '12' : '24';
       tsMode = normMode(v && v[TS_MODE_KEY]);
@@ -1437,6 +1508,11 @@
         devMode = !!changes[MuseHelper.DEV_MODE_KEY].newValue;
         applyDevAttr();
         syncAll(syncDev);
+      }
+      if (area === 'local' && changes[MuseHelper.ADVANCED_KEY]) {
+        adv = changes[MuseHelper.ADVANCED_KEY].newValue || {};
+        syncAll(syncAdvanced);
+        syncAll(syncUpdate);
       }
       if (area === 'local' && changes[MuseHelper.PACE_BADGE_KEY]) {
         showPace = changes[MuseHelper.PACE_BADGE_KEY].newValue !== false;
