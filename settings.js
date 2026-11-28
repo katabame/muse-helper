@@ -45,6 +45,7 @@
   let chatWidth = 'default'; // 本文の幅
   let fontScale = 100; // 文字の大きさ(%)
   let lowConfirm = 10; // 残りがこの % 以下なら送信前に確認(0 でオフ)
+  let badgePosMode = 'abs'; // オーバーレイの位置の保存方法 'abs' | 'rel'
   let shortcutKeys = {}; // 変更したショートカットのキー { id: code }
   let capturing = null; // キーの変更を待っているショートカットの id
   let shortcutMsg = '';
@@ -335,6 +336,16 @@
       try { chrome.storage.local.set({ [MuseHelper.PACE_BADGE_KEY]: showPace }); } catch (e) {}
     }));
     wrap.appendChild(optCard);
+
+    // オーバーレイ(使用率のバッジ)の位置の保存方法
+    const posCard = radioCard('badgepos', 'オーバーレイの位置の保存方法', [
+      { value: 'abs', title: '絶対位置で保存', example: '画面の左上からの距離で保存します。ウィンドウの大きさを変えても、同じ距離の場所に出ます' },
+      { value: 'rel', title: '相対位置で保存', example: 'ウィンドウの大きさに対する割合で保存します。右端や下端に置けば、大きさを変えても右端・下端に出ます' },
+    ], (v) => setLayout(MuseHelper.BADGE_POS_MODE_KEY, v));
+    posCard.classList.add('mt-3');
+    wrap.appendChild(posCard);
+    wrap.appendChild(el('div', 'px-3 pt-1.5 text-caption-1 text-text-secondary',
+      'オーバーレイはドラッグで動かせます(位置はどちらの方法でも保存されるので、切り替えても動かし直す必要はありません)。'));
     return wrap;
   }
 
@@ -1434,7 +1445,7 @@
     syncShortcuts(pane);
     syncBackup(pane);
     pane.querySelectorAll('[role="radio"]').forEach((r) => {
-      const cur = { mode: tsMode, format: tsFormat, sendkey: sendKey, width: chatWidth, scale: String(fontScale), lowconfirm: String(lowConfirm) }[r.dataset.group];
+      const cur = { mode: tsMode, format: tsFormat, sendkey: sendKey, width: chatWidth, scale: String(fontScale), lowconfirm: String(lowConfirm), badgepos: badgePosMode }[r.dataset.group];
       r.setAttribute('aria-checked', String(r.dataset.value === cur));
     });
   }
@@ -1444,6 +1455,7 @@
     if (key === MuseHelper.CHAT_WIDTH_KEY) chatWidth = v;
     if (key === MuseHelper.FONT_SCALE_KEY) fontScale = v;
     if (key === MuseHelper.LOW_CONFIRM_KEY) lowConfirm = v;
+    if (key === MuseHelper.BADGE_POS_MODE_KEY) badgePosMode = v;
     syncAll(syncPane);
     try { chrome.storage.local.set({ [key]: v }); } catch (e) {}
   }
@@ -1512,6 +1524,7 @@
     const has = (k) => !partial || k in v;
     if (has(MuseHelper.CHAT_WIDTH_KEY)) chatWidth = ['narrow', 'wide', 'full'].includes(v[MuseHelper.CHAT_WIDTH_KEY]) ? v[MuseHelper.CHAT_WIDTH_KEY] : 'default';
     if (has(MuseHelper.FONT_SCALE_KEY)) fontScale = [80, 90, 110, 125].includes(v[MuseHelper.FONT_SCALE_KEY]) ? v[MuseHelper.FONT_SCALE_KEY] : 100;
+    if (has(MuseHelper.BADGE_POS_MODE_KEY)) badgePosMode = v[MuseHelper.BADGE_POS_MODE_KEY] === 'rel' ? 'rel' : 'abs';
     if (has(MuseHelper.LOW_CONFIRM_KEY)) lowConfirm = [0, 5, 20].includes(v[MuseHelper.LOW_CONFIRM_KEY]) ? v[MuseHelper.LOW_CONFIRM_KEY] : 10;
     if (has(MuseHelper.SHORTCUT_KEYS_KEY)) shortcutKeys = v[MuseHelper.SHORTCUT_KEYS_KEY] || {};
     if (has(MuseHelper.DRAFT_HISTORY_KEY)) draftHistory = v[MuseHelper.DRAFT_HISTORY_KEY] || {};
@@ -1531,7 +1544,7 @@
   try {
     chrome.storage.local.get([TS_FMT_KEY, TS_MODE_KEY, MuseHelper.UPDATE_KEY, MuseHelper.USAGE_KEY, MuseHelper.HISTORY_KEY, MuseHelper.PACE_BADGE_KEY,
       MuseHelper.DRAFTS_KEY, MuseHelper.DRAFTS_ENABLED_KEY, MuseHelper.DEV_MODE_KEY, MuseHelper.ADVANCED_KEY, MuseHelper.DEV_RELOAD_KEY, MuseHelper.SEND_KEY_KEY, MuseHelper.BOOKMARKS_KEY, MuseHelper.SNIPPETS_KEY, MuseHelper.ACTIVITY_KEY, MuseHelper.CHAT_WIDTH_KEY, MuseHelper.FONT_SCALE_KEY,
-      MuseHelper.LOW_CONFIRM_KEY, MuseHelper.SHORTCUT_KEYS_KEY, MuseHelper.DRAFT_HISTORY_KEY, ...Object.keys(prefs)], (v) => {
+      MuseHelper.LOW_CONFIRM_KEY, MuseHelper.BADGE_POS_MODE_KEY, MuseHelper.SHORTCUT_KEYS_KEY, MuseHelper.DRAFT_HISTORY_KEY, ...Object.keys(prefs)], (v) => {
       applyLayoutValues(v || {});
       bookmarkCount = Object.keys((v && v[MuseHelper.BOOKMARKS_KEY]) || {}).length;
       for (const k of Object.keys(prefs)) prefs[k] = prefValue(k, v && v[k]);
@@ -1558,7 +1571,7 @@
         if (changes[TS_MODE_KEY]) tsMode = normMode(changes[TS_MODE_KEY].newValue);
         syncAll(syncPane);
       }
-      const lk = [MuseHelper.CHAT_WIDTH_KEY, MuseHelper.FONT_SCALE_KEY, MuseHelper.LOW_CONFIRM_KEY, MuseHelper.SHORTCUT_KEYS_KEY, MuseHelper.DRAFT_HISTORY_KEY];
+      const lk = [MuseHelper.CHAT_WIDTH_KEY, MuseHelper.FONT_SCALE_KEY, MuseHelper.LOW_CONFIRM_KEY, MuseHelper.BADGE_POS_MODE_KEY, MuseHelper.SHORTCUT_KEYS_KEY, MuseHelper.DRAFT_HISTORY_KEY];
       if (area === 'local' && lk.some((k) => changes[k])) {
         const v = {};
         for (const k of lk) if (changes[k]) v[k] = changes[k].newValue;

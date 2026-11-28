@@ -114,6 +114,32 @@
   let el, big, small, pace, warn, upd, autoRow, dragging = null;
   let compact = false; // 縮小表示(クリックで切り替え)
   const COMPACT_KEY = MuseHelper.BADGE_COMPACT_KEY;
+  // 位置: pos = { left: '120px', top: '10px', rx, ry }(ドラッグで動かしたときに保存。rx・ry は動かせる範囲に対する割合 0〜1)。
+  // 保存方法(設定)が 'abs' なら left・top を、'rel' なら rx・ry を使う(右端に置けば、ウィンドウの大きさを変えても右端に出る)。
+  // どちらも、ウィンドウからはみ出すときは中に収めて表示する(保存した値は変えない)
+  const POS_MODE_KEY = MuseHelper.BADGE_POS_MODE_KEY;
+  let pos = null;
+  let posMode = 'abs';
+  const room = () => ({ w: Math.max(0, window.innerWidth - el.offsetWidth), h: Math.max(0, window.innerHeight - el.offsetHeight) });
+  const clamp = (v, max) => Math.min(Math.max(0, v), max);
+  function applyPos() {
+    if (!el || !pos || dragging) return;
+    const r = room();
+    let x = parseFloat(pos.left) || 0, y = parseFloat(pos.top) || 0;
+    if (posMode === 'rel') {
+      // 割合がない(以前の版で保存した位置)ときは、今のウィンドウでの割合を求めて保存する
+      // (毎回求め直すと、ウィンドウの大きさを変えても絶対位置と同じになってしまうため)
+      if (!Number.isFinite(pos.rx) || !Number.isFinite(pos.ry)) {
+        pos = { ...pos, rx: r.w ? clamp(x / r.w, 1) : 0, ry: r.h ? clamp(y / r.h, 1) : 0 };
+        try { chrome.storage.local.set({ [POS_KEY]: pos }); } catch (e) {}
+      }
+      x = pos.rx * r.w;
+      y = pos.ry * r.h;
+    }
+    el.style.left = `${Math.round(clamp(x, r.w))}px`;
+    el.style.top = `${Math.round(clamp(y, r.h))}px`;
+    el.style.right = 'auto';
+  }
 
   function build() {
     el = document.createElement('div');
@@ -181,8 +207,14 @@
         render();
         return;
       }
-      try { chrome.storage.local.set({ [POS_KEY]: { left: el.style.left, top: el.style.top } }); } catch (e) {}
+      // 両方の形で保存する(保存方法を切り替えても、動かし直さずに済むように)
+      const r = room(), x = parseFloat(el.style.left) || 0, y = parseFloat(el.style.top) || 0;
+      pos = { left: el.style.left, top: el.style.top, rx: r.w ? clamp(x / r.w, 1) : 0, ry: r.h ? clamp(y / r.h, 1) : 0 };
+      try { chrome.storage.local.set({ [POS_KEY]: pos }); } catch (e) {}
     });
+    // ウィンドウや、バッジ自身の大きさ(縮小表示・行の増減)が変わったら置き直す
+    window.addEventListener('resize', applyPos);
+    new ResizeObserver(() => applyPos()).observe(el);
   }
 
   const ago = MuseHelper.ago;
@@ -539,19 +571,16 @@
   }
 
   try {
-    chrome.storage.local.get([STORE_KEY, POS_KEY, HISTORY_KEY, PACE_BADGE_KEY, COMPACT_KEY, MuseHelper.UPDATE_KEY], (v) => {
+    chrome.storage.local.get([STORE_KEY, POS_KEY, POS_MODE_KEY, HISTORY_KEY, PACE_BADGE_KEY, COMPACT_KEY, MuseHelper.UPDATE_KEY], (v) => {
       showPace = !(v && v[PACE_BADGE_KEY] === false);
       compact = !!(v && v[COMPACT_KEY]);
       if (v && v[STORE_KEY]) state = v[STORE_KEY];
       if (v && Array.isArray(v[HISTORY_KEY])) history = v[HISTORY_KEY];
       update = (v && v[MuseHelper.UPDATE_KEY]) || null;
       start();
-      const p = v && v[POS_KEY];
-      if (p && el) {
-        el.style.left = p.left;
-        el.style.top = p.top;
-        el.style.right = 'auto';
-      }
+      pos = (v && v[POS_KEY]) || null;
+      posMode = v && v[POS_MODE_KEY] === 'rel' ? 'rel' : 'abs';
+      applyPos();
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
@@ -561,6 +590,12 @@
       if (changes[HISTORY_KEY] && Array.isArray(changes[HISTORY_KEY].newValue)) history = changes[HISTORY_KEY].newValue;
       if (changes[PACE_BADGE_KEY]) showPace = changes[PACE_BADGE_KEY].newValue !== false;
       if (changes[COMPACT_KEY]) compact = !!changes[COMPACT_KEY].newValue;
+      // ほかのタブで動かしたとき・保存方法を変えたとき
+      if (changes[POS_KEY] || changes[POS_MODE_KEY]) {
+        if (changes[POS_KEY]) pos = changes[POS_KEY].newValue || null;
+        if (changes[POS_MODE_KEY]) posMode = changes[POS_MODE_KEY].newValue === 'rel' ? 'rel' : 'abs';
+        applyPos();
+      }
       if (el && (changes[MuseHelper.UPDATE_KEY] || changes[STORE_KEY] || changes[HISTORY_KEY] || changes[TS_FMT_KEY] || changes[PACE_BADGE_KEY] || changes[COMPACT_KEY])) render();
     });
   } catch (e) {

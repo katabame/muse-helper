@@ -402,6 +402,7 @@ globalThis.MuseHelper = (() => {
     DATE_SEP_KEY: 'museDateSep', // false なら日付の区切り線を出さない(既定は表示)
     RESP_TIME_KEY: 'museRespTime', // false なら応答時間を出さない(既定は表示)
     BADGE_COMPACT_KEY: 'museBadgeCompact', // true ならバッジを縮小表示
+    BADGE_POS_MODE_KEY: 'museBadgePosMode', // 'abs'(左上からのピクセル・既定)| 'rel'(ウィンドウの大きさに対する割合) バッジの位置の保存方法
     NOTIFY_KEY: 'museNotify', // false なら使用率の通知を出さない(既定は通知)
     NOTIFIED_KEY: 'museNotified', // 通知済みの ID(同じ週に同じ通知を繰り返さない)
     NOTIFY_LOW: 20, // 残りがこの % 以下になったら通知
