@@ -4,6 +4,8 @@
 // - Muse Helper の要素: id が「muse-」で始まるもの、クラスに「muse-」で始まるものがある要素とその中身
 // - title は各スクリプトがそのまま設定してよい(マウスを乗せたとき・title が変わったときに移し替える)
 // - 読み書きの両方で title を使いたい要素(バッジ)は MuseHelper.tooltip.bind(el) で、title を data-muse-tip のプロパティにする
+// - Muse の要素の title(会話の一覧の名前など)も、マウスを乗せている間だけ title を外して(data は持たず、こちらで覚えて)自前で出し、
+//   離れたら元に戻す(Muse(React)が管理する属性なので、ずっと書き換えたままにはしない)
 (() => {
   'use strict';
   const M = MuseHelper;
@@ -15,6 +17,22 @@
   let target = null; // ツールチップを出す(出している)要素
   let timer = 0;
   let pressed = false; // マウスのボタンを押している間(ドラッグ中など)は出さない
+  let borrowed = null; // title を一時的に外している Muse の要素 { el, value }
+
+  // Muse の要素の title を外して覚える(Chrome 標準のツールチップを出さないため)
+  function borrow(el) {
+    const v = el.getAttribute('title');
+    borrowed = { el, value: v };
+    el.removeAttribute('title');
+    return v;
+  }
+  // 外していた title を戻す(その間に Muse が新しい title を付けていたら、そちらを残す)
+  function release() {
+    if (!borrowed) return;
+    const { el, value } = borrowed;
+    borrowed = null;
+    if (el.isConnected && !el.hasAttribute('title')) el.setAttribute('title', value);
+  }
 
   const isOurs = (e) => !!(e && e.closest && e.closest(OURS));
 
@@ -78,7 +96,7 @@
   document.addEventListener('mouseover', (ev) => {
     if (!M.alive()) return;
     // ドラッグ中(バッジを動かしている間など)は、要素がマウスについて動くので mouseover が起き続ける。出さない
-    if (pressed || ev.buttons) { hide(); return; }
+    if (pressed || ev.buttons) { hide(); release(); return; }
     const start = ev.target && ev.target.closest ? ev.target : null;
     // マウスの下の要素から上にたどり、説明のある Muse Helper の要素を探す
     let e = start && start.closest('[title], [data-muse-tip]');
@@ -94,6 +112,18 @@
         if (content) { e = hit; delay = p.delay; break; }
       }
     }
+    // それもなければ、Muse の要素の title(一番近いもの。title を外している要素の中ならそれ)
+    if (!e && start) {
+      const m = start.closest('[title]');
+      let cand = m && !isOurs(m) && m !== document.documentElement && m !== document.body && m.getAttribute('title').trim() ? m : null;
+      if (borrowed && borrowed.el.contains(start) && !(cand && cand !== borrowed.el && borrowed.el.contains(cand))) cand = borrowed.el;
+      if (cand) {
+        e = cand;
+        if (borrowed && borrowed.el === cand) content = borrowed.value;
+        else { release(); content = borrow(cand); }
+      }
+    }
+    if (!(borrowed && e === borrowed.el)) release();
     if (e === target) return;
     hide();
     if (!e || !(content || e.dataset.museTip)) return;
@@ -102,6 +132,7 @@
   }, true);
   document.addEventListener('mouseout', (ev) => {
     if (target && !(ev.relatedTarget && target.contains(ev.relatedTarget))) hide();
+    if (borrowed && !(ev.relatedTarget && borrowed.el.contains(ev.relatedTarget))) release();
   }, true);
   window.addEventListener('pointerdown', () => { pressed = true; hide(); }, true);
   ['pointerup', 'pointercancel'].forEach((t) => window.addEventListener(t, () => { pressed = false; }, true));
@@ -111,7 +142,16 @@
 
   // 表示中や、マウスを乗せたままの要素の title が書き換わったら、すぐ移し替える
   new MutationObserver((list) => {
-    for (const m of list) if (m.target.nodeType === 1 && m.target.hasAttribute('title') && isOurs(m.target)) adopt(m.target);
+    for (const m of list) {
+      if (m.target.nodeType !== 1 || !m.target.hasAttribute('title')) continue;
+      if (isOurs(m.target)) adopt(m.target);
+      // title を外している Muse の要素に、Muse が新しい title を付けた: 覚え直して、また外す
+      else if (borrowed && m.target === borrowed.el) {
+        borrowed.value = m.target.getAttribute('title');
+        m.target.removeAttribute('title');
+        if (target === m.target && tip) tip.textContent = borrowed.value;
+      }
+    }
   }).observe(document.documentElement, { attributes: true, attributeFilter: ['title'], subtree: true });
 
   // title を読み書きの両方で使う要素用: el.title が data-muse-tip を読み書きするようにする
