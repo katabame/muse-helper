@@ -111,6 +111,19 @@
     });
     // Radix のメニューは、項目の上にマウスが乗るとそこにフォーカスを移す。複製した項目は Radix の管理外なので自分で
     item.addEventListener('pointermove', () => { if (document.activeElement !== item) item.focus({ preventScroll: true }); });
+    // 矢印キーでの移動: Radix は自分の項目の一覧だけで移動先を決めるので、複製した項目へ(から)の移動はこちらで行う。
+    // メニューの要素で capture するので、Radix の処理(document で動く React の bubble)より先に動き、止められる
+    menu.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const items = [...menu.querySelectorAll('[role="menuitem"]:not([data-disabled])')];
+      const i = items.indexOf(document.activeElement);
+      if (i < 0) return;
+      const to = items[e.key === 'ArrowDown' ? i + 1 : i - 1];
+      if (items[i] !== item && to !== item) return; // 複製した項目に関係しない移動は Radix に任せる
+      e.preventDefault();
+      e.stopPropagation();
+      if (to) to.focus({ preventScroll: true });
+    }, true);
     copy.after(item);
   }
 

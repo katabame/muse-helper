@@ -91,7 +91,7 @@
     }
   }
   // ---------- 会話の一覧の日時を日本語に ----------
-  // Muse は「20m」「1h」「Wed」「Nov 17」「Nov 17, 2025」のように英語で出すので書き換える(読めない形ならそのまま)。
+  // Muse は「20m」「1h」「Wed」「Nov 17」「Nov 17, 2025」のように英語で出すので書き換える(「Today」「Yesterday」が出ることもあるので、それも。読めない形ならそのまま)。
   // 元の文字は data-muse-orig に残し、Muse が中身を変えたら(元とも書き換え後とも違えば)新しい元の文字とみなす
   const WEEKDAYS = { Sun: '日曜日', Mon: '月曜日', Tue: '火曜日', Wed: '水曜日', Thu: '木曜日', Fri: '金曜日', Sat: '土曜日' };
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -99,6 +99,8 @@
     const s = t.trim();
     let m;
     if (/^(just )?now$/i.test(s)) return 'たった今';
+    if (/^today$/i.test(s)) return '今日';
+    if (/^yesterday$/i.test(s)) return '昨日';
     if ((m = s.match(/^(\d+)\s*(s|m|h|d|w|mo|y)$/))) {
       return m[1] + { s: '秒', m: '分', h: '時間', d: '日', w: '週間', mo: 'か月', y: '年' }[m[2]];
     }
